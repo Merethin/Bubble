@@ -2,9 +2,12 @@ use std::collections::HashMap;
 
 use serenity::all::{CreateButton, Http};
 
-use crate::{config::OutputConfig, model::Event};
+use caramel::ns::UserAgent;
+use caramel::types::akari::Event;
+
+use crate::config::OutputConfig;
 use crate::webhook::{build_event_embed, send_embed_to_webhook};
-use crate::utils::{display_nation, display_region, display_rmb_post};
+use crate::utils::{display_nation, display_region};
 
 pub enum Field {
     Actor,
@@ -85,10 +88,7 @@ impl From<Vec<Field>> for Processor {
     }
 }
 
-pub struct OutputMap {
-    pub line_map: HashMap<&'static str, Processor>,
-    pub http: Http
-}
+pub type OutputMap = HashMap<&'static str, Processor>;
 
 fn process_found(event: &Event) -> String {
     let actor = event.actor.as_ref().unwrap();
@@ -131,19 +131,7 @@ fn process_delegate(event: &Event) -> String {
     }
 }
 
-fn process_rmb(event: &Event) -> String {
-    let actor = event.actor.as_ref().unwrap();
-    let origin = event.origin.as_ref().unwrap();
-    let postid = event.data.get(0).unwrap();
-
-    format!("{} lodged post {} on {}'s RMB", 
-        display_nation(actor, true),
-        display_rmb_post(origin, postid),
-        display_region(origin, true)
-    )
-}
-
-fn create_output_map() -> Result<OutputMap, Box<dyn std::error::Error>> {
+fn create_output_map() -> OutputMap {
     let mut line_map = HashMap::new();
 
     line_map.insert("join", vec![
@@ -184,22 +172,22 @@ fn create_output_map() -> Result<OutputMap, Box<dyn std::error::Error>> {
     ].into());
     line_map.insert("found", Processor::init(vec![], process_found));
     line_map.insert("delegate", Processor::init(vec![], process_delegate));
-    line_map.insert("rmb", Processor::init(vec![], process_rmb));
 
-    Ok(OutputMap { line_map, http: Http::new("") })
+    line_map
 }
 
 lazy_static::lazy_static! {
-    static ref OUTPUT_MAP: OutputMap = create_output_map().unwrap();
+    static ref OUTPUT_MAP: OutputMap = create_output_map();
 }
 
 pub async fn output_event(
+    http: &Http,
     category: &str,
     output_config: &OutputConfig,
     event: &Event,
-    web_user_agent: &str
+    user_agent: &UserAgent
 ) -> Result<(), Box<dyn std::error::Error>> {   
-    if let Some(processor) = OUTPUT_MAP.line_map.get(category) {
+    if let Some(processor) = OUTPUT_MAP.get(category) {
         let description = processor.process(event.clone());
 
         let mut buttons: Vec<CreateButton> = Vec::new();
@@ -208,7 +196,7 @@ pub async fn output_event(
             buttons.push(
                 CreateButton::new_link(
                     format!("https://www.nationstates.net/nation={}?generated_by={}#endorse", 
-                        event.actor.as_ref().unwrap(), web_user_agent
+                        event.actor.as_ref().unwrap(), user_agent.web()
                     )
                 ).label("Endorse Nation")
             );
@@ -219,7 +207,7 @@ pub async fn output_event(
         )?;
 
         send_embed_to_webhook(
-            &OUTPUT_MAP.http, 
+            http, 
             &output_config.hook,
             output_config.mentions.clone(),
             embed,

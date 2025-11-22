@@ -1,184 +1,160 @@
-mod rmq;
-mod model;
 mod config;
 mod api;
 mod output;
 mod webhook;
 mod utils;
+mod rmb;
+mod nscode;
+mod worker;
 
-use std::{collections::HashSet, env, process::exit};
+use std::{collections::HashSet, sync::Arc, process::exit, error::Error};
 
-use lapin::options::BasicAckOptions;
-use futures_util::StreamExt;
-use log::{STATIC_MAX_LEVEL, error};
-use simplelog::{ColorChoice, TermLogger, TerminalMode};
+use log::error;
+use serenity::all::Http;
+use tokio::sync::{RwLock, mpsc::Sender};
 
-use crate::{config::Config, model::Event, rmq::{create_akari_consumer, open_rmq_connection}};
-use crate::utils::canonicalize_name;
+use caramel::log::setup_log;
+use caramel::ns::{api::Client, UserAgent};
+use caramel::akari;
+use caramel::types::akari::Event;
 
+use crate::config::Config;
+
+const PROGRAM: &str = "bubble";
 const VERSION: &str = env!("CARGO_PKG_VERSION");
+const AUTHOR: &str = "Merethin";
 const CONFIG_PATH: &'static str = "config/bubble.toml";
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut builder = simplelog::ConfigBuilder::new();
-    builder.add_filter_ignore_str("serenity");
+async fn main() -> Result<(), Box<dyn Error>> {
+    setup_log(vec!["serenity"]);
 
-    TermLogger::init(
-        STATIC_MAX_LEVEL, builder.build(), TerminalMode::Stderr, ColorChoice::Auto
-    )?;
+    let user_agent = UserAgent::read_from_env(PROGRAM, VERSION, AUTHOR);
 
-    let (api_user_agent, web_user_agent) = read_user_agent();
+    let config = config::parse_config(CONFIG_PATH).unwrap_or_else(|err| {
+        error!("Failed to read config file: {}", err);
+        exit(1);
+    });
 
-    let client = match api::Client::new(api_user_agent) {
-        Ok(v) => v,
-        Err(err) => {
-            error!("Failed to initialize API client: {}", err);
-            exit(1);
-        }
-    };
+    let conn = lapin::Connection::connect(
+        &config.input.url,
+        lapin::ConnectionProperties::default(),
+    ).await?;
 
-    let config = match config::parse_config(CONFIG_PATH) {
-        Ok(v) => v,
-        Err(err) => {
-            error!("Failed to read config file: {}", err);
-            exit(1);
-        }
-    };
-
-    let conn = open_rmq_connection(&config).await?;
     let channel = conn.create_channel().await?;
-    let mut consumer = create_akari_consumer(&config, &channel).await?;
+    let mut consumer = akari::create_consumer(&channel, &config.input.exchange_name, None).await?;
 
-    let mut wa_nations: HashSet<String> = HashSet::new();
-    api::query_wa_nations(&client, &mut wa_nations).await?;
+    let client = Arc::new(Client::new(user_agent.clone()).unwrap_or_else(|err| {
+        error!("Failed to initialize API client: {}", err);
+        exit(1);
+    }));
 
-    while let Some(delivery) = consumer.next().await {
-        let delivery = match delivery {
-            Ok(v) => v,
-            Err(err) => {
-                error!("error in consumer: {}", err);
-                continue;
-            }
-        };
+    let wa_nations: Arc<RwLock<HashSet<String>>> = Arc::new(RwLock::new(HashSet::new()));
 
-        delivery
-            .ack(BasicAckOptions::default())
-            .await?;
+    let mut rmb_tx = worker::spawn_rmb_worker(&config, client.clone());
+    let mut wa_tx = worker::spawn_wa_worker(client.clone(), wa_nations.clone());
 
-        let event: Event = match str::from_utf8(&delivery.data).ok().and_then(
-            |v| serde_json::from_str(v).ok()
-        ) {
-            Some(v) => v,
-            None => continue, // invalid event! skip it
-        };
+    // Trigger a "fetch WA nations" API call
+    wa_tx.send(()).await.ok();
 
-        dispatch_event(event, &config, &mut wa_nations, &client, &web_user_agent).await?;
+    let http = Http::new("");
+
+    while let Some(event) = akari::consume(&mut consumer).await {
+        process_event(&http, event, &config, wa_nations.clone(), &user_agent, &mut rmb_tx, &mut wa_tx).await;
     }
 
     Ok(())
 }
 
-async fn dispatch_event(
-    event: Event, config: &Config, wa_nations: &mut HashSet<String>, 
-    client: &api::Client, web_user_agent: &String
-) -> Result<(), Box<dyn std::error::Error>> {
+async fn process_event(
+    http: &Http, event: Event, config: &Config, 
+    wa_nations: Arc<RwLock<HashSet<String>>>, 
+    user_agent: &UserAgent, 
+    rmb_tx: &mut Sender<crate::rmb::Post>,
+    wa_tx: &mut Sender<()>
+) {
     if event.category == "connmiss" {
-        api::query_wa_nations(&client, wa_nations).await?;
-        return Ok(());
+        // Trigger a "fetch WA nations" API call
+        wa_tx.send(()).await.ok();
+        return;
     }
 
-    if let Some(region) = &event.origin {
-        if event.category.as_str() == "rmbpost" {
-            let category = "rmb";
-            if let Some(output_config) = config.get_event(region, category) {
-                output::output_event(category, &output_config, &event, &web_user_agent).await.ok();
-            }
+    let is_wa = check_and_update_wa(&event, wa_nations).await;
 
-            return Ok(());
-        }
-
-        let category = match event.category.as_str() {
-            "rupdate" => "update",
-            "rfeature" => "feature",
-            "ndel" => "delegate",
-            "rdel" => "delegate",
-            "ldel" => "delegate",
-            "nfound" => "found",
-            "nrefound" => "found",
-            "wapply" => "apply",
-            "move" => {
-                match &event.actor {
-                    Some(nation) => if wa_nations.contains(nation) { "waleave" } else { "leave" },
-                    None => return Ok(())
-                }
-            },
-            "ncte" => {
-                match &event.receptor {
-                    Some(nation) => if wa_nations.contains(nation) { "wacte" } else { "cte" },
-                    None => return Ok(())
-                }
-            },
-            "wadmit" => {
-                if let Some(nation) = &event.actor {
-                    wa_nations.insert(nation.clone());
-                    "admit"
-                } else { return Ok(()); }
-            },
-            "wresign" => {
-                if let Some(nation) = &event.actor {
-                    wa_nations.remove(nation);
-                    "resign"
-                } else { return Ok(()); }
-            },
-            "wkick" => {
-                if let Some(nation) = &event.receptor {
-                    wa_nations.remove(nation);
-                    "wakick"
-                } else { return Ok(()); }
-            },
-            _ => {
-                return Ok(());
-            },
-        };
-
-        if let Some(output_config) = config.get_event(region, category) {
-            output::output_event(category, &output_config, &event, &web_user_agent).await.ok();
+    if let Some(region) = &event.origin
+    && let Some(category) = match_origin_category(&event, is_wa)
+    && let Some(output_config) = config.get_event(region, category) {
+        if category == "rmb" && let Some(postid) = event.data.get(0).and_then(|s| s.parse().ok()) {
+            rmb_tx.send((region.clone(), postid)).await.ok();
+        } else {
+            output::output_event(http, category, &output_config, &event, &user_agent).await.ok();
         }
     }
 
-    if let Some(region) = &event.destination && event.category.as_str() == "move" {
-        let category = {
-            match &event.actor {
-                Some(nation) => if wa_nations.contains(nation) { "wajoin" } else { "join" },
-                None => return Ok(())
-            }
-        };
-        if let Some(output_config) = config.get_event(region, category) {
-            output::output_event(category, &output_config, &event, &web_user_agent).await.ok();
-        }
+    if let Some(region) = &event.destination 
+    && event.category.as_str() == "move"
+    && let category = if is_wa { "wajoin" } else { "join" }
+    && let Some(output_config) = config.get_event(region, category) {
+        output::output_event(http, category, &output_config, &event, &user_agent).await.ok();
     }
-
-    Ok(())
 }
 
-fn read_user_agent() -> (String, String) {
-    let user = match env::var("NS_USER_AGENT") {
-        Ok(user) => user,
-        Err(err) => match err {
-            env::VarError::NotPresent => {
-                error!("No user agent provided, please set the NS_USER_AGENT environment variable to your main nation name");
-                exit(1);
-            },
-            env::VarError::NotUnicode(_) => {
-                error!("User agent is not valid unicode");
-                exit(1);
+async fn check_and_update_wa(event: &Event, wa_nations: Arc<RwLock<HashSet<String>>>) -> bool {
+    match event.category.as_str() {
+        "ncte" => {
+            let mut wa_nations = wa_nations.write().await;
+            event.receptor.as_ref().map(|nation| {
+                wa_nations.remove(nation)
+            }).unwrap_or(false)
+        },
+        "wadmit" => {
+            if let Some(nation) = &event.actor {
+                let mut wa_nations = wa_nations.write().await;
+                wa_nations.insert(nation.clone());
             }
-        }
-    };
+            true
+        },
+        "wresign" => {
+            if let Some(nation) = &event.actor {
+                let mut wa_nations = wa_nations.write().await;
+                wa_nations.remove(nation);
+            }
+            false
+        },
+        "wkick" => {
+            if let Some(nation) = &event.receptor {
+                let mut wa_nations = wa_nations.write().await;
+                wa_nations.remove(nation);
+            }
+            false
+        },
+        _ => {
+            let wa_nations = wa_nations.read().await;
+            event.actor.as_ref().map(|nation| {
+                wa_nations.contains(nation)
+            }).unwrap_or(false)
+        },
+    }
+}
 
-    let api_user_agent = format!("bubble/{} by Merethin, in use by {}", VERSION, user);
-    let web_user_agent = format!("bubble__by_merethin__usedBy_{}", canonicalize_name(&user));
-
-    (api_user_agent, web_user_agent)
+fn match_origin_category(event: &Event, is_wa: bool) -> Option<&'static str> {
+    Some(match event.category.as_str() {
+        "rmbpost" => "rmb",
+        "rupdate" => "update",
+        "rfeature" => "feature",
+        "ndel" => "delegate",
+        "rdel" => "delegate",
+        "ldel" => "delegate",
+        "nfound" => "found",
+        "nrefound" => "found",
+        "wapply" => "apply",
+        "wadmit" => "admit",
+        "wresign" => "resign",
+        "wkick" => "kick",
+        "move" => if is_wa { "waleave" } else { "leave" },
+        "ncte" => if is_wa { "wacte" } else { "cte" },
+        _ => {
+            return None;
+        },
+    })
 }

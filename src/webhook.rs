@@ -1,39 +1,10 @@
 use hex_color::HexColor;
-use serenity::{all::{
-    CreateActionRow, CreateAllowedMentions, CreateButton, CreateEmbed, CreateEmbedFooter, ExecuteWebhook, 
-    Http, LightMethod, Mentionable, Request, RoleId, Route, Timestamp, WebhookId
-}, json};
+use serenity::all::{
+    CreateActionRow, CreateAllowedMentions, CreateButton, CreateEmbed, 
+    CreateEmbedFooter, ExecuteWebhook, Http, Mentionable, RoleId, Timestamp
+};
 
-pub type Webhook = (WebhookId, String);
-
-/// Post a message to a webhook.
-/// 
-/// This helper function is used instead of ExecuteWebhook::execute()
-/// as the latter does not expose any way of adding "with_components=true" to the parameters, 
-/// which is needed to make non-interactive components work on a non-application webhook 
-/// (interactive components don't work at all).
-async fn execute_webhook(
-    http: &Http,
-    webhook: &Webhook,
-    message: ExecuteWebhook,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let params: Vec<(&'static str, String)> = vec![
-        ("wait", "false".into()), 
-        ("with_components", "true".into())
-    ];
-
-    let request = Request::new(
-        Route::WebhookWithToken { webhook_id: webhook.0, token: &webhook.1 },
-        LightMethod::Post,
-    ).params(Some(params)).body(
-        Some(json::to_vec(&message)?)
-    );
-
-    let response = http.request(request).await?;
-    response.error_for_status()?;
-
-    Ok(())
-}
+use caramel::webhook::{Webhook, execute_webhook};
 
 pub fn build_event_embed(
     color: &Option<HexColor>, description: &str, timestamp: u64, footer: Option<&str>

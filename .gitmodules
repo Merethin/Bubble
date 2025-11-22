@@ -1,0 +1,3 @@
+[submodule "caramel"]
+	path = caramel
+	url = https://github.com/Merethin/Caramel

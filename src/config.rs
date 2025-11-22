@@ -2,12 +2,10 @@ use std::collections::HashMap;
 use std::fs;
 use std::process::exit;
 use log::{error, warn};
-use serenity::{all::WebhookId, utils};
 use toml::Table;
 use hex_color::HexColor;
-use url::Url;
 
-use crate::webhook::Webhook;
+use caramel::webhook::{Webhook, parse_webhook_from_url};
 
 #[derive(Debug, Clone)]
 pub struct OutputConfig {
@@ -16,7 +14,7 @@ pub struct OutputConfig {
     pub mentions: Vec<u64>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct EventConfig {
     pub color: Option<HexColor>,
     pub hook: Option<String>,
@@ -39,7 +37,7 @@ pub struct InputConfig {
 #[derive(Debug)]
 pub struct Config {
     pub input: InputConfig,
-    pub webhooks: HashMap<String, (WebhookId, String)>,
+    pub webhooks: HashMap<String, Webhook>,
     pub roles: HashMap<String, u64>,
     pub regions: HashMap<String, RegionConfig>,
 }
@@ -56,7 +54,7 @@ impl Config {
             None => return None,
         };
 
-        let mut webhook: Option<(WebhookId, String)> = None; 
+        let mut webhook: Option<Webhook> = None; 
 
         if let Some(hook) = &event_config.hook {
             webhook = self.webhooks.get(hook).cloned();
@@ -87,27 +85,12 @@ impl Config {
     }
 }
 
-fn parse_webhook(hook: &str) -> Option<(WebhookId, String)> {
-    let url = match Url::parse(hook).ok() {
-        Some(v) => v,
-        None => { return None; }
-    };
-
-    let result = utils::parse_webhook(&url);
-
-    if let Some(pair) = result {
-        return Some((pair.0, pair.1.to_owned()));
-    }
-    
-    None
-}
-
-fn parse_webhook_map(table: &Table) -> HashMap<String, (WebhookId, String)> {
+fn parse_webhook_map(table: &Table) -> HashMap<String, Webhook> {
     let mut result = HashMap::new();
 
     for (key, value) in table.iter() {
         if let toml::Value::String(url) = value {
-            if let Some(webhook) = parse_webhook(url) {
+            if let Some(webhook) = parse_webhook_from_url(url) {
                 result.insert(key.clone(), webhook);
             } else {
                 warn!("Couldn't parse webhook '{}'", key);

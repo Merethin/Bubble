@@ -1,0 +1,47 @@
+tree = { value* }
+value = _{ bold_tag
+        | italic_tag
+        | underline_tag
+        | strike_tag
+        | sub_tag
+        | sup_tag
+        | nation_tag
+        | region_tag
+        | proposal_tag
+        | resolution_tag
+        | default_spoiler_tag
+        | spoiler_tag
+        | url_tag
+        | pre_tag
+        | quote_tag
+        | invalid_tag
+        | fragment }
+
+fragment = _{ TEXT }
+
+bold_tag = { "[b]" ~ ( !("[/b]") ~ value )+ ~ "[/b]" }
+italic_tag = { "[i]" ~ ( !("[/i]") ~ value )+ ~ "[/i]"}
+underline_tag = { "[u]" ~ ( !("[/u]") ~ value )+ ~ "[/u]"}
+strike_tag = { "[strike]" ~ ( !("[/u]") ~ value )+ ~ "[/strike]"}
+sub_tag = { "[sub]" ~ ( !("[/sub]") ~ value )+ ~ "[/sub]"}
+sup_tag = { "[sup]" ~ ( !("[/sup]") ~ value )+ ~ "[/sup]"}
+nation_tag = { "[nation" ~ ("=" ~ nation_flags)? ~ "]" ~ NAME ~ "[/nation]" }
+region_tag = { "[region]" ~ NAME ~ "[/region]" }
+proposal_tag = { "[proposal=" ~ PROPOSAL ~ "]" ~ ( !("[/proposal]") ~ value )+ ~ "[/proposal]" }
+resolution_tag = { "[resolution=" ~ council ~ "#" ~ NUMBER ~ "]" ~ ( !("[/resolution]") ~ value )+ ~ "[/resolution]" }
+default_spoiler_tag = { "[spoiler]" ~ ( !("[/spoiler]") ~ value )* ~ "[/spoiler]" }
+spoiler_tag = { "[spoiler=" ~ TEXT_INSIDE_TAG ~ "]" ~ ( !("[/spoiler]") ~ value )* ~ "[/spoiler]" }
+url_tag = { "[url=" ~ TEXT_INSIDE_TAG ~ "]" ~ ( !("[/url]") ~ value )+ ~ "[/url]" }
+pre_tag = { "[pre]" ~ ( !("[/pre]") ~ value )+ ~ "[/pre]" }
+quote_tag = { "[quote=" ~ NAME ~ ";" ~ NUMBER ~ "]" ~ ( !("[/quote]") ~ value )+ ~ "[/quote]" }
+invalid_tag = { "[" ~ (!"]" ~ ANY)* ~ "]" }
+
+nation_flags = _{ nation_flag ~ ("+" ~ nation_flag)* }
+nation_flag = _{ "noflag" | "noname" | "long" }
+council = { "GA" | "SC" | "UN" }
+
+NUMBER = { ASCII_DIGIT+ }
+TEXT = { (!"[" ~ ANY)+ }
+TEXT_INSIDE_TAG = { (!"]" ~ ANY)+ }
+NAME = { (ASCII_ALPHANUMERIC | " " | "_" | "-")+ }
+PROPOSAL = { (ASCII_ALPHA_LOWER | ASCII_DIGIT | "_" | "-")+ }
