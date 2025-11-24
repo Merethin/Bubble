@@ -160,6 +160,10 @@ pub fn render_as_bytes<'a>(tags: Vec<Tag<'a>>, mut limit: usize) -> Vec<u8> {
             Tag::Quote((nation, id, inner_tags)) => {
                 let url = format!("https://www.nationstates.net/page=rmb/postid={id}");
 
+                if let Some(char) = chars.last() && *char != b'\n' {
+                    add_if_within_limit(&mut chars, &[b'\n'], &mut limit);
+                }
+
                 let bytes = render_as_bytes(inner_tags, limit.min(512));
                 if nation != "0" && id != "0" {
                     add_if_within_limit(
