@@ -1,3 +1,4 @@
+use log::error;
 use serenity::all::{CreateButton, Http};
 use std::{collections::{HashMap, VecDeque}, time::Duration, error::Error};
 use itertools::Itertools;
@@ -169,7 +170,9 @@ pub async fn fetch_posts_if_pending(
                 output_rmb_post(
                     region, &content, &post, &quote_content,
                     &queue.config, &client.user_agent, &http
-                ).await.ok();
+                ).await.unwrap_or_else(|err| {
+                    error!("Failed to send RMB post {post:?} to webhook: {err}");
+                });
             }
         }
 

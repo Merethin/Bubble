@@ -55,7 +55,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut wa_tx = worker::spawn_wa_worker(client.clone(), wa_nations.clone());
 
     // Trigger a "fetch WA nations" API call
-    wa_tx.send(()).await.ok();
+    wa_tx.send(()).await.unwrap_or_else(|err| {
+        error!("Failed to trigger WA nation update: {err}");
+    });
 
     let http = Http::new("");
 
@@ -75,7 +77,10 @@ async fn process_event(
 ) {
     if event.category == "connmiss" {
         // Trigger a "fetch WA nations" API call
-        wa_tx.send(()).await.ok();
+        wa_tx.send(()).await.unwrap_or_else(|err| {
+            error!("Failed to trigger WA nation update: {err}");
+        });
+
         return;
     }
 
@@ -85,9 +90,13 @@ async fn process_event(
     && let Some(category) = match_origin_category(&event, is_wa)
     && let Some(output_config) = config.get_event(region, category) {
         if category == "rmb" && let Some(postid) = event.data.get(0).and_then(|s| s.parse().ok()) {
-            rmb_tx.send((region.clone(), postid)).await.ok();
+            rmb_tx.send((region.clone(), postid)).await.unwrap_or_else(|err| {
+                error!("Failed to send RMB post {postid} (region: {region}) to worker: {err}");
+            });
         } else {
-            output::output_event(http, category, &output_config, &event, &user_agent).await.ok();
+            output::output_event(http, category, &output_config, &event, &user_agent).await.unwrap_or_else(|err| {
+                error!("Failed to send event {event:?} to webhook: {err}");
+            });
         }
     }
 
@@ -95,7 +104,9 @@ async fn process_event(
     && event.category.as_str() == "move"
     && let category = if is_wa { "wajoin" } else { "join" }
     && let Some(output_config) = config.get_event(region, category) {
-        output::output_event(http, category, &output_config, &event, &user_agent).await.ok();
+        output::output_event(http, category, &output_config, &event, &user_agent).await.unwrap_or_else(|err| {
+            error!("Failed to send event {event:?} to webhook: {err}");
+        });
     }
 }
 
