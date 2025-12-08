@@ -62,6 +62,27 @@ fn encode_unicode_as_html_entities(input: &str) -> String {
          .collect()
 }
 
+fn generate_quote_link(
+    region: &str,
+    post: &RMBPost,
+    quote_content: &str,
+    user_agent: &UserAgent
+) -> String {
+    let quote = format!("[quote={};{}]{}[/quote]\n", post.nation, post.id, quote_content);
+
+    let url = format!(
+        "https://www.nationstates.net/page=display_region_rmb/region={}?generated_by={}&message={}#editor", 
+        region, user_agent.web(), 
+        urlencoding::encode(&encode_unicode_as_html_entities(&quote)).into_owned()
+    );
+
+    if url.len() >= 512 {
+        return generate_quote_link(region, post, "- snip -", user_agent);
+    }
+
+    url
+}
+
 async fn output_rmb_post(
     region: &str,
     content: &str,
@@ -82,15 +103,9 @@ async fn output_rmb_post(
         ).label("View Post")
     );
 
-    let quote = format!("[quote={};{}]{}[/quote]\n", post.nation, post.id, quote_content);
-
     buttons.push(
         CreateButton::new_link(
-        format!(
-                "https://www.nationstates.net/page=display_region_rmb/region={}?generated_by={}&message={}#editor", 
-                region, user_agent.web(), 
-                urlencoding::encode(&encode_unicode_as_html_entities(&quote)).into_owned()
-            )
+        generate_quote_link(region, post, quote_content, user_agent)
         ).label("Quote Post")
     );
 
@@ -130,11 +145,7 @@ pub fn format_content(
 ) -> (String, String) {
     let decoded = decode_html_entities(content).into_owned();
 
-    let mut quote_content = nscode::remove_subquotes(&decoded);
-    
-    if quote_content.len() > 512 {
-        quote_content = "- snip -".to_owned(); 
-    }
+    let quote_content = nscode::remove_subquotes(&decoded);
 
     if let Some(tags) = nscode::parse(&decoded) {
         let fmt = nscode::render(tags, 4096);
