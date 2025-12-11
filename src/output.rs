@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use itertools::Itertools;
 use serenity::all::{CreateButton, Http};
 
 use caramel::ns::UserAgent;
@@ -7,7 +8,7 @@ use caramel::types::akari::Event;
 
 use crate::config::OutputConfig;
 use crate::webhook::{build_event_embed, send_embed_to_webhook};
-use crate::utils::{display_nation, display_region};
+use crate::utils::{chamber_link, display_chamber, display_nation, display_proposal_name, display_proposal_url, display_region};
 
 pub enum Field {
     Actor,
@@ -131,6 +132,83 @@ fn process_delegate(event: &Event) -> String {
     }
 }
 
+fn process_wa_floor(event: &Event) -> String {
+    let author = event.receptor.as_ref().unwrap();
+    let chamber = &event.data[0];
+    let proposal = &event.data[1];
+
+    if let Some((_, coauthors)) = event.data.split_at_checked(2) {
+        format!("The {} resolution {} (by {}, coauthor(s): {}) is now at vote",
+            display_chamber(chamber, true),
+            display_proposal_name(proposal), 
+            display_nation(author, true),
+            coauthors.iter().map(|nation| display_nation(nation, false)).join(", ")
+        )
+    } else {
+        format!("The {} resolution {} (by {}) is now at vote", 
+            display_chamber(chamber, true),
+            display_proposal_name(proposal), 
+            display_nation(author, true),
+        )
+    }
+}
+
+fn process_wa_submit(event: &Event) -> String {
+    let author = event.actor.as_ref().unwrap();
+    let chamber = &event.data[0];
+    let board = &event.data[1];
+    let proposal = &event.data[2];
+
+    format!("{} submitted a proposal ({}) to the {} {} Board", 
+        display_nation(author, true),
+        display_proposal_name(proposal), 
+        chamber, board
+    )
+}
+
+fn process_wa_pass(event: &Event) -> String {
+    let chamber = &event.data[0];
+    let resolution = &event.data[1];
+    let proposal = &event.data[2];
+    let votes_for = &event.data[3];
+    let votes_against = &event.data[4];
+
+    format!("The {} resolution {} was passed {} votes FOR to {} votes AGAINST", 
+        display_chamber(chamber, false),
+        display_proposal_url(proposal, chamber, resolution, true),
+        votes_for,
+        votes_against
+    )
+}
+
+fn process_wa_fail(event: &Event) -> String {
+    let chamber = &event.data[0];
+    let proposal = &event.data[1];
+    let votes_against = &event.data[2];
+    let votes_for = &event.data[3];
+
+    format!("The {} resolution {} was defeated {} votes AGAINST to {} votes FOR", 
+        display_chamber(chamber, false),
+        display_proposal_name(proposal),
+        votes_against,
+        votes_for
+    )
+}
+
+fn process_wa_discard(event: &Event) -> String {
+    let chamber = &event.data[0];
+    let proposal = &event.data[1];
+    let votes_for = &event.data[2];
+    let votes_against = &event.data[3];
+
+    format!("The {} resolution {} was discarded after getting {} votes FOR and {} votes AGAINST", 
+        display_chamber(chamber, false),
+        display_proposal_name(proposal),
+        votes_for,
+        votes_against
+    )
+}
+
 fn create_output_map() -> OutputMap {
     let mut line_map = HashMap::new();
 
@@ -172,6 +250,11 @@ fn create_output_map() -> OutputMap {
     ].into());
     line_map.insert("found", Processor::init(vec![], process_found));
     line_map.insert("delegate", Processor::init(vec![], process_delegate));
+    line_map.insert("wa-floor", Processor::init(vec![], process_wa_floor));
+    line_map.insert("wa-submit", Processor::init(vec![], process_wa_submit));
+    line_map.insert("wa-pass", Processor::init(vec![], process_wa_pass));
+    line_map.insert("wa-fail", Processor::init(vec![], process_wa_fail));
+    line_map.insert("wa-discard", Processor::init(vec![], process_wa_discard));
 
     line_map
 }
@@ -199,6 +282,16 @@ pub async fn output_event(
                         event.actor.as_ref().unwrap(), user_agent.web()
                     )
                 ).label("Endorse Nation")
+            );
+        }
+
+        if category == "wa-floor" {
+            buttons.push(
+                CreateButton::new_link(
+                    format!("{}?generated_by={}", 
+                        chamber_link(&event.data[0]), user_agent.web()
+                    )
+                ).label("Open Voting Page")
             );
         }
 

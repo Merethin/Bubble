@@ -108,6 +108,13 @@ async fn process_event(
             error!("Failed to send event {event:?} to webhook: {err}");
         });
     }
+
+    if let Some(category) = match_world_category(&event)
+    && let Some(output_config) = config.get_world_event(category) {
+        output::output_event(http, category, &output_config, &event, &user_agent).await.unwrap_or_else(|err| {
+            error!("Failed to send event {event:?} to webhook: {err}");
+        });
+    }
 }
 
 async fn check_and_update_wa(event: &Event, wa_nations: Arc<RwLock<HashSet<String>>>) -> bool {
@@ -164,6 +171,19 @@ fn match_origin_category(event: &Event, is_wa: bool) -> Option<&'static str> {
         "wkick" => "kick",
         "move" => if is_wa { "waleave" } else { "leave" },
         "ncte" => if is_wa { "wacte" } else { "cte" },
+        _ => {
+            return None;
+        },
+    })
+}
+
+fn match_world_category(event: &Event) -> Option<&'static str> {
+    Some(match event.category.as_str() {
+        "rsfloor" => "wa-floor",
+        "rssubmit" => "wa-submit",
+        "rspass" => "wa-pass",
+        "rsfail" => "wa-fail",
+        "rsdiscard" => "wa-discard",
         _ => {
             return None;
         },

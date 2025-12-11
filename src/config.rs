@@ -40,15 +40,11 @@ pub struct Config {
     pub webhooks: HashMap<String, Webhook>,
     pub roles: HashMap<String, u64>,
     pub regions: HashMap<String, RegionConfig>,
+    pub world: Option<RegionConfig>,
 }
 
 impl Config {
-    pub fn get_event(&self, region: &str, event: &str) -> Option<OutputConfig> {
-        let region_config = match self.regions.get(region) {
-            Some(c) => c,
-            None => return None,
-        };
-
+    fn get_event_impl(&self, region_config: &RegionConfig, event: &str) -> Option<OutputConfig> {
         let event_config = match region_config.events.get(event) {
             Some(c) => c,
             None => return None,
@@ -82,6 +78,19 @@ impl Config {
         }
 
         Some(result)
+    }
+
+    pub fn get_event(&self, region: &str, event: &str) -> Option<OutputConfig> {
+        let region_config = match self.regions.get(region) {
+            Some(c) => c,
+            None => return None,
+        };
+
+        return self.get_event_impl(region_config, event);
+    }
+
+    pub fn get_world_event(&self, event: &str) -> Option<OutputConfig> {
+        return self.get_event_impl(self.world.as_ref()?, event);
     }
 }
 
@@ -224,10 +233,18 @@ pub fn parse_config(path: &str) -> Result<Config, Box<dyn std::error::Error>> {
             parse_regions(t)
         },
         _ => {
-            warn!("No regions specified in config!");
             HashMap::new()
         }
     };
 
-    Ok(Config { input, webhooks, roles, regions })
+    let world = match table.get("world") {
+        Some(toml::Value::Table(t)) => {
+            Some(parse_region(t))
+        },
+        _ => {
+            None
+        }
+    };
+
+    Ok(Config { input, webhooks, roles, regions, world })
 }
