@@ -183,7 +183,7 @@ fn match_world_category(event: &Event) -> Option<&'static str> {
         "rssubmit" => "wa-submit",
         "rspass" => "wa-pass",
         "rsfail" => "wa-fail",
-        "rsdiscard" => "wa-discard",
+        "rdiscard" => "wa-discard",
         _ => {
             return None;
         },
