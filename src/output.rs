@@ -137,7 +137,7 @@ fn process_wa_floor(event: &Event) -> String {
     let chamber = &event.data[0];
     let proposal = &event.data[1];
 
-    if let Some((_, coauthors)) = event.data.split_at_checked(2) {
+    if let Some((_, coauthors)) = event.data.split_at_checked(2) && !coauthors.is_empty() {
         format!("The {} resolution {} (by {}, coauthor(s): {}) is now at vote",
             display_chamber(chamber, true),
             display_proposal_name(proposal), 
