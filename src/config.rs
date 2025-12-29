@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 use std::fs;
 use std::process::exit;
 use log::{error, warn};
@@ -6,6 +6,8 @@ use toml::Table;
 use hex_color::HexColor;
 
 use caramel::webhook::{Webhook, parse_webhook_from_url};
+
+use crate::cache::NSCache;
 
 #[derive(Debug, Clone)]
 pub struct OutputConfig {
@@ -25,6 +27,7 @@ pub struct EventConfig {
 pub struct RegionConfig {
     pub default_hook: Option<String>,
     pub default_color: Option<HexColor>,
+    pub exclude: Vec<String>,
     pub events: HashMap<String, EventConfig>,
 }
 
@@ -40,15 +43,13 @@ pub struct Config {
     pub webhooks: HashMap<String, Webhook>,
     pub roles: HashMap<String, u64>,
     pub regions: HashMap<String, RegionConfig>,
+    pub tags: HashMap<String, RegionConfig>,
     pub world: Option<RegionConfig>,
 }
 
 impl Config {
     fn get_event_impl(&self, region_config: &RegionConfig, event: &str) -> Option<OutputConfig> {
-        let event_config = match region_config.events.get(event) {
-            Some(c) => c,
-            None => return None,
-        };
+        let Some(event_config) = region_config.events.get(event) else { return None };
 
         let mut webhook: Option<Webhook> = None; 
 
@@ -66,25 +67,22 @@ impl Config {
          };
 
         if let Some(color) = &event_config.color {
-            result.color = Some(color.clone());
+            result.color = Some(*color);
         } else if let Some(color) = &region_config.default_color {
-            result.color = Some(color.clone());
+            result.color = Some(*color);
         }
 
-        for mention in event_config.mentions.iter() {
+        for mention in &event_config.mentions {
             if let Some(id) = self.roles.get(mention) {
-                result.mentions.push(id.clone());
+                result.mentions.push(*id);
             }
         }
 
         Some(result)
     }
 
-    pub fn get_event(&self, region: &str, event: &str) -> Option<OutputConfig> {
-        let region_config = match self.regions.get(region) {
-            Some(c) => c,
-            None => return None,
-        };
+    pub fn get_region_event(&self, region: &str, event: &str) -> Option<OutputConfig> {
+        let Some(region_config) = self.regions.get(region) else { return None };
 
         return self.get_event_impl(region_config, event);
     }
@@ -92,17 +90,27 @@ impl Config {
     pub fn get_world_event(&self, event: &str) -> Option<OutputConfig> {
         return self.get_event_impl(self.world.as_ref()?, event);
     }
+
+    pub async fn get_tag_events(&self, cache: Arc<NSCache>, region: &str, event: &str) -> Vec<OutputConfig> {
+        cache.tag_cloud.read().await.iter().filter_map(|(tag, regions)| {
+            if regions.contains(region) { Some(tag.clone()) } else { None }
+        }).filter_map(|tag| {
+            let config = self.tags.get(&tag).unwrap();
+            if config.exclude.contains(&region.to_string()) { return None; }
+            self.get_event_impl(config, event)
+        }).collect()
+    }
 }
 
 fn parse_webhook_map(table: &Table) -> HashMap<String, Webhook> {
     let mut result = HashMap::new();
 
-    for (key, value) in table.iter() {
+    for (key, value) in table {
         if let toml::Value::String(url) = value {
             if let Some(webhook) = parse_webhook_from_url(url) {
                 result.insert(key.clone(), webhook);
             } else {
-                warn!("Couldn't parse webhook '{}'", key);
+                warn!("Couldn't parse webhook '{key}'");
             }
         }
     }
@@ -113,7 +121,7 @@ fn parse_webhook_map(table: &Table) -> HashMap<String, Webhook> {
 fn parse_role_map(table: &Table) -> HashMap<String, u64> {
     let mut result = HashMap::new();
 
-    for (key, value) in table.iter() {
+    for (key, value) in table {
         if let toml::Value::String(v) = value {
             if let Ok(id) = v.parse::<u64>() {
                 result.insert(key.clone(), id);
@@ -125,9 +133,11 @@ fn parse_role_map(table: &Table) -> HashMap<String, u64> {
 }
 
 fn parse_region(table: &Table) -> RegionConfig {
-    let mut result = RegionConfig { default_hook: None, default_color: None, events: HashMap::new() };
+    let mut result = RegionConfig { 
+        default_hook: None, default_color: None, exclude: Vec::new(), events: HashMap::new() 
+    };
 
-    for (key, value) in table.iter() {
+    for (key, value) in table {
         if key == "default-hook" {
             if let toml::Value::String(v) = value {
                 result.default_hook = Some(v.clone());
@@ -136,9 +146,17 @@ fn parse_region(table: &Table) -> RegionConfig {
             if let toml::Value::String(v) = value {
                 result.default_color = Some(HexColor::parse_rgb(v).expect("Not a valid color string"));
             }
+        } else if key == "exclude" {
+            if let toml::Value::Array(a) = value {
+                for region in a {
+                    if let toml::Value::String(s) = region {
+                        result.exclude.push(s.to_lowercase().replace(' ', "_"));
+                    }
+                }
+            }
         } else if let toml::Value::Table(t) = value {
             if key == "default-hook" || key == "default-color" {
-                warn!("Config key {} should have a string value", key);
+                warn!("Config key {key} should have a string value");
                 continue;
             }
 
@@ -153,7 +171,7 @@ fn parse_region(table: &Table) -> RegionConfig {
             }
 
             if let Some(toml::Value::Array(a)) = t.get("mentions") {
-                for mention in a.iter() {
+                for mention in a {
                     if let toml::Value::String(s) = mention {
                         event.mentions.push(s.clone());
                     }
@@ -170,9 +188,9 @@ fn parse_region(table: &Table) -> RegionConfig {
 fn parse_regions(table: &Table) -> HashMap<String, RegionConfig> {
     let mut result = HashMap::new();
 
-    for (key, value) in table.iter() {
+    for (key, value) in table {
         if let toml::Value::Table(v) = value {
-            result.insert(key.clone(), parse_region(v));
+            result.insert(key.to_lowercase().replace(' ', "_"), parse_region(v));
         }
     }
 
@@ -237,6 +255,15 @@ pub fn parse_config(path: &str) -> Result<Config, Box<dyn std::error::Error>> {
         }
     };
 
+    let tags = match table.get("tag") {
+        Some(toml::Value::Table(t)) => {
+            parse_regions(t)
+        },
+        _ => {
+            HashMap::new()
+        }
+    };
+
     let world = match table.get("world") {
         Some(toml::Value::Table(t)) => {
             Some(parse_region(t))
@@ -246,5 +273,5 @@ pub fn parse_config(path: &str) -> Result<Config, Box<dyn std::error::Error>> {
         }
     };
 
-    Ok(Config { input, webhooks, roles, regions, world })
+    Ok(Config { input, webhooks, roles, regions, tags, world })
 }

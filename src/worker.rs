@@ -1,28 +1,49 @@
 use serenity::all::Http;
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::mpsc;
 use std::{collections::HashSet, sync::Arc, time::Duration};
 
 use caramel::ns::api::Client;
 
-use crate::{api, rmb, config::Config};
+use crate::{api, cache::NSCache, config::Config, rmb};
 
-pub fn spawn_wa_worker(
+pub enum NSQuery {
+    UpdateWA,
+    UpdateTag(String),
+}
+
+pub fn spawn_ns_worker(
     client: Arc<Client>,
-    wa_nations: Arc<RwLock<HashSet<String>>>,
-) -> mpsc::Sender<()> {
-    let (send, mut recv) = mpsc::channel::<()>(100);
+    cache: Arc<NSCache>,
+) -> mpsc::Sender<NSQuery> {
+    let (send, mut recv) = mpsc::channel::<NSQuery>(100);
 
-    let _ = tokio::spawn(async move {
-        while let Some(_) = recv.recv().await {
-            loop {
-                let mut wa_nations = wa_nations.write().await;
+    tokio::spawn(async move {
+        while let Some(query) = recv.recv().await {
+            match query {
+                NSQuery::UpdateWA => loop {
+                    let mut wa_nations = cache.wa_nations.write().await;
 
-                if let Err(_) = api::query_wa_nations(&client, &mut wa_nations).await {
-                    drop(wa_nations);
-                    tokio::time::sleep(Duration::from_secs(120)).await; // Try again after 2 minutes
-                } else {
-                    break;
-                }
+                    if let Err(_) = api::query_wa_nations(&client, &mut wa_nations).await {
+                        drop(wa_nations);
+                        tokio::time::sleep(Duration::from_secs(120)).await; // Try again after 2 minutes
+                    } else {
+                        break;
+                    }
+                },
+                NSQuery::UpdateTag(tag) => loop {
+                    let mut tag_cloud = cache.tag_cloud.write().await;
+
+                    let mut tag_entry = tag_cloud.entry(tag.clone()).or_insert(
+                        HashSet::new()
+                    );
+
+                    if let Err(_) = api::query_regions_by_tag(&client, &mut tag_entry, vec![tag.clone()]).await {
+                        drop(tag_cloud);
+                        tokio::time::sleep(Duration::from_secs(120)).await; // Try again after 2 minutes
+                    } else {
+                        break;
+                    }
+                },
             }
         }
     });
@@ -37,13 +58,13 @@ pub fn spawn_rmb_worker(
 
     let mut queues = rmb::create_rmb_queues(config);
 
-    let _ = tokio::spawn(async move {
+    tokio::spawn(async move {
         let http = Http::new("");
 
         loop {
             // Eagerly fetch posts until we've got everything pending, don't block
             while let Ok(post) = recv.try_recv() {
-                rmb::enqueue_post(&mut queues, post);
+                rmb::enqueue_post(&mut queues, &post);
             }
 
             // Go through each region, if any has pending posts, fetch them (only one at a time)
@@ -57,7 +78,7 @@ pub fn spawn_rmb_worker(
 
             // If there were no posts, block
             if !was_fetched && let Some(post) = recv.recv().await {
-                rmb::enqueue_post(&mut queues, post);
+                rmb::enqueue_post(&mut queues, &post);
             }
         }
     });

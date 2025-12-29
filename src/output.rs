@@ -30,7 +30,7 @@ pub struct Processor {
 }
 
 impl Processor {
-    pub fn process(&self, event: Event) -> String {
+    pub fn process(&self, event: &Event) -> String {
         let mut result: Vec<String> = Vec::new();
 
         for field in &self.fields {
@@ -66,7 +66,7 @@ impl Processor {
                     }
                 },
                 Text(text) => {
-                    result.push(text.to_string())
+                    result.push((*text).to_string());
                 }
             }
         }
@@ -271,7 +271,7 @@ pub async fn output_event(
     user_agent: &UserAgent
 ) -> Result<(), Box<dyn std::error::Error>> {   
     if let Some(processor) = OUTPUT_MAP.get(category) {
-        let description = processor.process(event.clone());
+        let description = processor.process(event);
 
         let mut buttons: Vec<CreateButton> = Vec::new();
         
@@ -296,7 +296,7 @@ pub async fn output_event(
         }
 
         let embed = build_event_embed(
-            &output_config.color, &description, event.time, None
+            output_config.color, &description, event.time, None
         )?;
 
         send_embed_to_webhook(

@@ -75,7 +75,7 @@ fn wrap_lines(vec: &mut Vec<u8>, bytes: &[u8], start: &[u8], end: &[u8], limit: 
     }
 }
 
-pub fn render_as_bytes<'a>(tags: Vec<Tag<'a>>, mut limit: usize) -> Vec<u8> {
+pub fn render_as_bytes(tags: Vec<Tag<'_>>, mut limit: usize) -> Vec<u8> {
     let mut chars: Vec<u8> = Vec::new();
 
     if limit == 0 { return chars; }
@@ -101,14 +101,10 @@ pub fn render_as_bytes<'a>(tags: Vec<Tag<'a>>, mut limit: usize) -> Vec<u8> {
                 let bytes = render_as_bytes(inner_tags, limit.saturating_sub(4));
                 wrap_lines(&mut chars, &bytes, "~~".as_bytes(), "~~".as_bytes(), &mut limit);
             },
-            Tag::Sub(inner_tags) => {
+            Tag::Sub(inner_tags) | Tag::Sup(inner_tags) | Tag::Spoiler((_, inner_tags)) => {
                 let bytes = render_as_bytes(inner_tags, limit);
                 add_until_limit(&mut chars, &bytes, &mut limit);
             },
-            Tag::Sup(inner_tags) => {
-                let bytes = render_as_bytes(inner_tags, limit);
-                add_until_limit(&mut chars, &bytes, &mut limit);
-            }
             Tag::Nation(name) => {
                 let string = display_nation(name, false);
                 add_if_within_limit(&mut chars, string.as_bytes(), &mut limit);
@@ -133,7 +129,7 @@ pub fn render_as_bytes<'a>(tags: Vec<Tag<'a>>, mut limit: usize) -> Vec<u8> {
                     "UN" => format!("https://www.nationstates.net/page=WA_past_resolution/id={id}/un=1"),
                     "GA" => format!("https://www.nationstates.net/page=WA_past_resolution/id={id}/council=1"),
                     "SC" => format!("https://www.nationstates.net/page=WA_past_resolution/id={id}/council=2"),
-                    _ => "".to_owned(),
+                    _ => String::new(),
                 };
 
                 let bytes = render_as_bytes(inner_tags, limit);
@@ -175,17 +171,13 @@ pub fn render_as_bytes<'a>(tags: Vec<Tag<'a>>, mut limit: usize) -> Vec<u8> {
 
                 wrap_lines(&mut chars, &bytes, "> ".as_bytes(), "".as_bytes(), &mut limit);
             }
-            Tag::Spoiler((_, inner_tags)) => {
-                let bytes = render_as_bytes(inner_tags, limit);
-                add_until_limit(&mut chars, &bytes, &mut limit);
-            }
         }
     }
 
     chars
 }
 
-pub fn render<'a>(tags: Vec<Tag<'a>>, limit: usize) -> String {
+pub fn render(tags: Vec<Tag<'_>>, limit: usize) -> String {
     let chars = render_as_bytes(tags, limit);
 
     String::from_utf8_lossy(&chars).to_string()
@@ -195,17 +187,13 @@ pub fn render<'a>(tags: Vec<Tag<'a>>, limit: usize) -> String {
 #[grammar = "nscode.pest"]
 struct NsCodeParser;
 
-fn walk_pair<'a>(pair: Pair<'a, Rule>) -> Vec<Tag<'a>> {
+fn walk_pair(pair: Pair<'_, Rule>) -> Vec<Tag<'_>> {
     match pair.as_rule() {
         Rule::tree => {
             walk(pair.into_inner())
         }
 
-        Rule::TEXT => {
-            vec![Tag::Text(pair.as_str())]
-        }
-
-        Rule::invalid_tag => {
+        Rule::TEXT | Rule::invalid_tag  => {
             vec![Tag::Text(pair.as_str())]
         }
 
@@ -219,16 +207,14 @@ fn walk_pair<'a>(pair: Pair<'a, Rule>) -> Vec<Tag<'a>> {
         Rule::nation_tag => {
             let name = pair.into_inner()
                 .find(|p| p.as_rule() == Rule::NAME)
-                .map(|p| p.as_str())
-                .unwrap_or("");
+                .map_or("", |p| p.as_str());
             vec![Tag::Nation(name)]
         }
 
         Rule::region_tag => {
             let name = pair.into_inner()
                 .find(|p| p.as_rule() == Rule::NAME)
-                .map(|p| p.as_str())
-                .unwrap_or("");
+                .map_or("", |p| p.as_str());
             vec![Tag::Region(name)]
         }
 
@@ -296,11 +282,11 @@ fn walk_pair<'a>(pair: Pair<'a, Rule>) -> Vec<Tag<'a>> {
     }
 }
 
-fn walk<'a>(pairs: Pairs<'a, Rule>) -> Vec<Tag<'a>> {
+fn walk(pairs: Pairs<'_, Rule>) -> Vec<Tag<'_>> {
     pairs.flat_map(walk_pair).collect()
 }
 
-pub fn parse<'a>(text: &'a str) -> Option<Vec<Tag<'a>>> {
+pub fn parse(text: &str) -> Option<Vec<Tag<'_>>> {
     if let Ok(pairs) = NsCodeParser::parse(Rule::tree, text) {
         Some(walk(pairs))
     } else {

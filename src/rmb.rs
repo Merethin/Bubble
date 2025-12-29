@@ -37,7 +37,7 @@ impl RegionQueue {
     }
 
     fn get_starting_postid(&self) -> Option<u64> {
-        self.pending_posts.get(0).cloned()
+        self.pending_posts.get(0).copied()
     }
 
     fn get_pending_posts(&self) -> usize {
@@ -48,7 +48,7 @@ impl RegionQueue {
 pub fn create_rmb_queues(config: &Config) -> HashMap<String, RegionQueue> {
     let mut map: HashMap<String, RegionQueue> = HashMap::new();
     for region in &config.regions {
-        if let Some(e) = config.get_event(region.0, "rmb") {
+        if let Some(e) = config.get_region_event(region.0, "rmb") {
             map.insert(region.0.clone(), RegionQueue::new(e.clone()));
         }
     }
@@ -117,7 +117,7 @@ async fn output_rmb_post(
         };
 
     let embed = build_event_embed(
-        &output_config.color, &content, post.timestamp, 
+        output_config.color, &content, post.timestamp, 
         Some(&footer)
     )?.title(
         format!("New post on {}'s RMB", prettify_name(&region))
@@ -197,7 +197,7 @@ pub async fn fetch_posts_if_pending(
 
 pub fn enqueue_post(
     queues: &mut HashMap<String, RegionQueue>,
-    post: Post
+    post: &Post
 ) {
     if let Some(queue) = queues.get_mut(&post.0) {
         queue.add_post(post.1);

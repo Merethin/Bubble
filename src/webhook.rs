@@ -7,7 +7,7 @@ use serenity::all::{
 use caramel::webhook::{Webhook, execute_webhook};
 
 pub fn build_event_embed(
-    color: &Option<HexColor>, description: &str, timestamp: u64, footer: Option<&str>
+    color: Option<HexColor>, description: &str, timestamp: u64, footer: Option<&str>
 ) -> Result<CreateEmbed, Box<dyn std::error::Error>> {
     let mut embed = CreateEmbed::new()
         .description(description)
