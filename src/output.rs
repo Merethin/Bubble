@@ -22,7 +22,7 @@ pub enum Field {
 
 pub type ProcessorExtFn = fn(&Event) -> String;
 
-use Field::*;
+use Field::{Actor, Receptor, Origin, Destination, HighlightOrigin, HighlightDestination, Text};
 
 pub struct Processor {
     fields: Vec<Field>,

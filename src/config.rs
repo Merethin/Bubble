@@ -201,40 +201,28 @@ pub fn parse_config(path: &str) -> Result<Config, Box<dyn std::error::Error>> {
     let contents = fs::read_to_string(path)?;
     let table: toml::Table = toml::from_str(&contents.as_str())?;
 
-    let input: InputConfig = match table.get("input") {
-        Some(toml::Value::Table(t)) => {
-            let url = match t.get("url") {
-                Some(toml::Value::String(s)) => s.clone(),
-                _ => {
-                    error!("Config is missing required 'input.url' value!");
-                    exit(1);
-                }
-            };
-
-            let exchange_name = match t.get("exchange_name") {
-                Some(toml::Value::String(s)) => s.clone(),
-                _ => {
-                    error!("Config is missing required 'input.exchange_name' value!");
-                    exit(1);
-                }
-            };
-
-            InputConfig { url, exchange_name }
-        },
-        _ => {
-            error!("Config is missing required 'input' section!");
+    let input: InputConfig = if let Some(toml::Value::Table(t)) = table.get("input") {
+        let url = if let Some(toml::Value::String(s)) = t.get("url") { s.clone() } else {
+            error!("Config is missing required 'input.url' value!");
             exit(1);
-        }
+        };
+
+        let exchange_name = if let Some(toml::Value::String(s)) = t.get("exchange_name") { s.clone() } else {
+            error!("Config is missing required 'input.exchange_name' value!");
+            exit(1);
+        };
+
+        InputConfig { url, exchange_name }
+    } else {
+        error!("Config is missing required 'input' section!");
+        exit(1);
     };
 
-    let webhooks = match table.get("webhooks") {
-        Some(toml::Value::Table(t)) => {
-            parse_webhook_map(t)
-        },
-        _ => {
-            warn!("No webhooks specified in config!");
-            HashMap::new()
-        }
+    let webhooks = if let Some(toml::Value::Table(t)) = table.get("webhooks") {
+        parse_webhook_map(t)
+    } else {
+        warn!("No webhooks specified in config!");
+        HashMap::new()
     };
 
     let roles = match table.get("roles") {
