@@ -87,7 +87,8 @@ async fn process_event(
         return;
     }
 
-    let is_wa = check_and_update_cache(&event, cache.clone()).await;
+    check_and_update_tag_cloud(&event, cache.clone()).await;
+    let is_wa = check_and_update_wa(&event, cache.clone()).await;
 
     if cache.should_run_tag_query().await {
         cache.run_tag_query(ns_tx, config).await;
@@ -130,7 +131,7 @@ async fn process_event(
         }
     }
 
-    if let Some(category) = match_world_category(&event)
+    if let Some(category) = match_world_category(&event, is_wa)
     && let Some(output_config) = config.get_world_event(category) {
         output::output_event(http, category, &output_config, &event, &user_agent).await.unwrap_or_else(|err| {
             error!("Failed to send event {event:?} to webhook: {err}");
@@ -138,8 +139,7 @@ async fn process_event(
     }
 }
 
-async fn check_and_update_cache(event: &Event, cache: Arc<NSCache>) -> bool {
-    // Non-WA related events first
+async fn check_and_update_tag_cloud(event: &Event, cache: Arc<NSCache>) {
     match event.category.as_str() {
         "rgcte" | "govabd" => {
             if let Some(region) = &event.origin {
@@ -202,8 +202,9 @@ async fn check_and_update_cache(event: &Event, cache: Arc<NSCache>) -> bool {
         }
         _ => {}
     }
+}
 
-    // WA related events afterwards
+async fn check_and_update_wa(event: &Event, cache: Arc<NSCache>) -> bool {
     match event.category.as_str() {
         "ncte" => {
             let mut wa_nations = cache.wa_nations.write().await;
@@ -257,13 +258,21 @@ fn match_origin_category(event: &Event, is_wa: bool) -> Option<&'static str> {
     })
 }
 
-fn match_world_category(event: &Event) -> Option<&'static str> {
+fn match_world_category(event: &Event, is_wa: bool) -> Option<&'static str> {
     Some(match event.category.as_str() {
         "rsfloor" => "wa-floor",
         "rssubmit" => "wa-submit",
         "rspass" => "wa-pass",
         "rsfail" => "wa-fail",
         "rdiscard" => "wa-discard",
+        "rfeature" => "feature",
+        "ndel" | "rdel" | "ldel" => "delegate",
+        "nfound" | "nrefound" => "found",
+        "wapply" => "apply",
+        "wadmit" => "admit",
+        "wresign" => "resign",
+        "wkick" => "kick",
+        "ncte" => if is_wa { "wacte" } else { "cte" },
         _ => {
             return None;
         },

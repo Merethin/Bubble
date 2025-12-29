@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::LazyLock};
 
 use itertools::Itertools;
 use serenity::all::{CreateButton, Http};
@@ -259,9 +259,7 @@ fn create_output_map() -> OutputMap {
     line_map
 }
 
-lazy_static::lazy_static! {
-    static ref OUTPUT_MAP: OutputMap = create_output_map();
-}
+static OUTPUT_MAP: LazyLock<OutputMap> = LazyLock::new(|| create_output_map());
 
 pub async fn output_event(
     http: &Http,

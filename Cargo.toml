@@ -13,7 +13,6 @@ toml = "0.9.8"
 caramel = { path = "./caramel", features = ["webhook", "ns-api", "ns-xml", "log", "akari"] }
 lapin = "3.7.2"
 serenity = "0.12.4"
-lazy_static = "1.5.0"
 bbx = "0.3.1"
 urlencoding = "2.1.3"
 pest = "2.8.4"

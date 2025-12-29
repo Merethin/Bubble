@@ -405,7 +405,6 @@ dependencies = [
  "html-escape",
  "itertools 0.14.0",
  "lapin",
- "lazy_static",
  "log",
  "pest",
  "pest_derive",
