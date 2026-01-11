@@ -15,11 +15,12 @@ The config file (located at `config/bubble.toml`) has four sections:
 #### Input
 ```
 [input]
-url = "amqp://guest:guest@0.0.0.0:5672"
 exchange_name = "akari_events"
 ```
 
-For the input section, specify the URL of the RabbitMQ instance as well as the exchange name to listen for Akari events on.
+For the input section, specify the exchange name to listen for Akari events on.
+
+The RabbitMQ database url should be provided in the environment or .env file as `RABBITMQ_URL`.
 
 #### Webhooks
 ```
@@ -97,16 +98,16 @@ Happening categories are the following:
 
 Run `cargo build --release` to compile the program. You'll need a recent version of Rust.
 
-Run it with `NS_USER_AGENT=[YOUR MAIN NATION NAME] ./target/release/bubble`.
+Run it with `NS_USER_AGENT=[YOUR MAIN NATION NAME] ./target/release/bubble` (with the appropriate variables in .env).
 
 Alternatively, you can set up a Docker container.
 
 Building it: `docker build --tag bubble .`
 
-Running it: `docker run -e NS_USER_AGENT=[YOUR MAIN NATION NAME] bubble`
+Running it: `docker run -e NS_USER_AGENT=[YOUR MAIN NATION NAME] -e RABBITMQ_URL=[...] bubble`
 
 Note: to pass your config file over to Bubble, you must bind mount the directory it is in:
 
-`docker run -e NS_USER_AGENT=[YOUR MAIN NATION NAME] -v ./config:/config bubble`
+`docker run -e NS_USER_AGENT=[YOUR MAIN NATION NAME] -e RABBITMQ_URL=[...] -v ./config:/config bubble`
 
 Inside Docker, Bubble looks for the config file in `/config/bubble.toml`. If it isn't behaving like you expect, make sure the file is present/mounted in some way.

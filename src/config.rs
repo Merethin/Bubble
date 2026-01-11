@@ -33,7 +33,6 @@ pub struct RegionConfig {
 
 #[derive(Debug)]
 pub struct InputConfig {
-    pub url: String,
     pub exchange_name: String,
 }
 
@@ -202,17 +201,12 @@ pub fn parse_config(path: &str) -> Result<Config, Box<dyn std::error::Error>> {
     let table: toml::Table = toml::from_str(&contents.as_str())?;
 
     let input: InputConfig = if let Some(toml::Value::Table(t)) = table.get("input") {
-        let url = if let Some(toml::Value::String(s)) = t.get("url") { s.clone() } else {
-            error!("Config is missing required 'input.url' value!");
-            exit(1);
-        };
-
         let exchange_name = if let Some(toml::Value::String(s)) = t.get("exchange_name") { s.clone() } else {
             error!("Config is missing required 'input.exchange_name' value!");
             exit(1);
         };
 
-        InputConfig { url, exchange_name }
+        InputConfig { exchange_name }
     } else {
         error!("Config is missing required 'input' section!");
         exit(1);

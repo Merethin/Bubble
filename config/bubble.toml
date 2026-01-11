@@ -1,5 +1,4 @@
 [input]
-url = "amqp://guest:guest@0.0.0.0:5672"
 exchange_name = "akari_events"
 
 [webhooks]
