@@ -269,7 +269,7 @@ pub async fn output_event(
     event: &Event,
     user_agent: &UserAgent
 ) -> Result<(), Box<dyn std::error::Error>> {  
-    if category == "rmbpost" {
+    if category == "rmb" {
         output_rmb_post(http, output_config, event, user_agent).await?;
 
         return Ok(());
