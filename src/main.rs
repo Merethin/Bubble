@@ -61,7 +61,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let cache = NSCache::new();
 
-    let mut rmb_tx = worker::spawn_rmb_worker(&config, client.clone());
     let mut ns_tx = worker::spawn_ns_worker(client.clone(), cache.clone());
 
     ns_tx.send(NSQuery::UpdateWA).await.unwrap_or_else(|err| {
@@ -73,7 +72,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let http = Http::new("");
 
     while let Some(event) = akari::consume(&mut consumer).await {
-        process_event(&http, event, &config, cache.clone(), &user_agent, &mut rmb_tx, &mut ns_tx).await;
+        process_event(&http, event, &config, cache.clone(), &user_agent, &mut ns_tx).await;
     }
 
     Ok(())
@@ -83,7 +82,6 @@ async fn process_event(
     http: &Http, event: Event, config: &Config, 
     cache: Arc<NSCache>,
     user_agent: &UserAgent, 
-    rmb_tx: &mut Sender<crate::rmb::Post>,
     ns_tx: &mut Sender<NSQuery>
 ) {
     if event.category == "connmiss" {
@@ -103,22 +101,16 @@ async fn process_event(
 
     if let Some(region) = &event.origin
     && let Some(category) = match_origin_category(&event, is_wa) {
-        if category == "rmb" && let Some(postid) = event.data.get(0).and_then(|s| s.parse().ok()) {
-            rmb_tx.send((region.clone(), postid)).await.unwrap_or_else(|err| {
-                error!("Failed to send RMB post {postid} (region: {region}) to worker: {err}");
+        if let Some(output_config) = config.get_region_event(region, category) {
+            output::output_event(http, category, &output_config, &event, &user_agent).await.unwrap_or_else(|err| {
+                error!("Failed to send event {event:?} to webhook: {err}");
             });
-        } else {
-            if let Some(output_config) = config.get_region_event(region, category) {
-                output::output_event(http, category, &output_config, &event, &user_agent).await.unwrap_or_else(|err| {
-                    error!("Failed to send event {event:?} to webhook: {err}");
-                });
-            }
+        }
 
-            for output_config in config.get_tag_events(cache.clone(), region, category).await {
-                output::output_event(http, category, &output_config, &event, &user_agent).await.unwrap_or_else(|err| {
-                    error!("Failed to send event {event:?} to webhook: {err}");
-                });
-            }
+        for output_config in config.get_tag_events(cache.clone(), region, category).await {
+            output::output_event(http, category, &output_config, &event, &user_agent).await.unwrap_or_else(|err| {
+                error!("Failed to send event {event:?} to webhook: {err}");
+            });
         }
     }
 

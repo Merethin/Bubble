@@ -7,6 +7,7 @@ use caramel::ns::UserAgent;
 use caramel::types::akari::Event;
 
 use crate::config::OutputConfig;
+use crate::rmb::output_rmb_post;
 use crate::webhook::{build_event_embed, send_embed_to_webhook};
 use crate::utils::{chamber_link, display_chamber, display_nation, display_proposal_name, display_proposal_url, display_region};
 
@@ -267,7 +268,13 @@ pub async fn output_event(
     output_config: &OutputConfig,
     event: &Event,
     user_agent: &UserAgent
-) -> Result<(), Box<dyn std::error::Error>> {   
+) -> Result<(), Box<dyn std::error::Error>> {  
+    if category == "rmbpost" {
+        output_rmb_post(http, output_config, event, user_agent).await?;
+
+        return Ok(());
+    } 
+
     if let Some(processor) = OUTPUT_MAP.get(category) {
         let description = processor.process(event);
 
