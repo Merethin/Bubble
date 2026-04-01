@@ -403,7 +403,6 @@ dependencies = [
  "caramel",
  "dotenv",
  "hex_color",
- "html-escape",
  "itertools 0.14.0",
  "lapin",
  "log",

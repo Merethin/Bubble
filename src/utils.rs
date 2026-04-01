@@ -1,5 +1,4 @@
 use caramel::ns::format::{nation_link, region_link, prettify_name};
-use html_escape::decode_html_entities;
 
 pub fn display_nation(name: &str, bold: bool) -> String {
     let display = prettify_name(name);
@@ -27,7 +26,7 @@ pub fn display_chamber(chamber: &str, bold: bool) -> String {
 }
 
 pub fn display_proposal_name(name: &str) -> String {
-    format!("`{}`", decode_html_entities(name))
+    format!("`{}`", name)
 }
 
 pub fn display_proposal_url(name: &str, chamber: &str, id: &str, bold: bool) -> String {
@@ -39,7 +38,7 @@ pub fn display_proposal_url(name: &str, chamber: &str, id: &str, bold: bool) -> 
 
     let fmt = format!(
         "[{}](https://www.nationstates.net/page=WA_past_resolution/id={}/council={})", 
-        decode_html_entities(name), id, council
+        name, id, council
     );
     
     if bold { format!("**{fmt}**") } else { fmt }

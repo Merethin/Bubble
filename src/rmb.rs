@@ -1,6 +1,5 @@
 use serenity::all::{CreateButton, Http};
 use std::error::Error;
-use html_escape::decode_html_entities;
 
 use caramel::{ns::{UserAgent, format::prettify_name}, types::akari::Event};
 
@@ -85,11 +84,9 @@ pub async fn output_rmb_post(
 pub fn format_content(
     content: &String
 ) -> (String, String) {
-    let decoded = decode_html_entities(content).into_owned();
+    let quote_content = nscode::remove_subquotes(content);
 
-    let quote_content = nscode::remove_subquotes(&decoded);
-
-    if let Some(tags) = nscode::parse(&decoded) {
+    if let Some(tags) = nscode::parse(content) {
         let fmt = nscode::render(tags, 4096);
 
         return (fmt, quote_content);
