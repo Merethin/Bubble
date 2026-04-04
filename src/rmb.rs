@@ -3,14 +3,10 @@ use std::error::Error;
 
 use caramel::{ns::{UserAgent, format::prettify_name}, types::akari::Event};
 
-use crate::webhook::{build_event_embed, send_embed_to_webhook};
+use crate::{render::render_tags, webhook::{build_event_embed, send_embed_to_webhook}};
 use crate::{config::OutputConfig, nscode};
 
-fn encode_unicode_as_html_entities(input: &str) -> String {
-    input.chars()
-         .map(|c| if c as u32 > 127 { format!("&#{};", c as u32) } else { c.to_string() })
-         .collect()
-}
+const MAX_DISCORD_URL_LENGTH: usize = 512;
 
 fn generate_quote_link(
     region: &str,
@@ -23,11 +19,10 @@ fn generate_quote_link(
 
     let url = format!(
         "https://www.nationstates.net/page=display_region_rmb/region={}?generated_by={}&message={}#editor", 
-        region, user_agent.web(), 
-        urlencoding::encode(&encode_unicode_as_html_entities(&quote)).into_owned()
+        region, user_agent.web(), urlencoding::encode(&quote).into_owned()
     );
 
-    if url.len() >= 512 {
+    if url.len() >= MAX_DISCORD_URL_LENGTH {
         return generate_quote_link(region, nation, postid, "- snip -", user_agent);
     }
 
@@ -60,14 +55,14 @@ pub async fn output_rmb_post(
 
     buttons.push(
         CreateButton::new_link(
-        generate_quote_link(region, nation, postid, &quote_content, user_agent)
+            generate_quote_link(region, nation, postid, &quote_content, user_agent)
         ).label("Quote Post")
     );
 
     let footer = format!("Posted by {}", prettify_name(&nation));
 
     let embed = build_event_embed(
-        output_config.color, &content, event.time,Some(&footer)
+        output_config.color, &content, event.time, Some(&footer)
     )?.title(
         format!("New post on {}'s RMB", prettify_name(&region))
     );
@@ -81,13 +76,15 @@ pub async fn output_rmb_post(
     ).await
 }
 
+const MAX_DISCORD_EMBED_CONTENT: usize = 4096;
+
 pub fn format_content(
     content: &String
 ) -> (String, String) {
     let quote_content = nscode::remove_subquotes(content);
 
     if let Some(tags) = nscode::parse(content) {
-        let fmt = nscode::render(tags, 4096);
+        let fmt = render_tags(tags, MAX_DISCORD_EMBED_CONTENT);
 
         return (fmt, quote_content);
     }
