@@ -1,6 +1,7 @@
 use std::{collections::HashMap, sync::LazyLock};
 
 use itertools::Itertools;
+use log::warn;
 use serenity::all::{CreateButton, Http};
 
 use caramel::ns::UserAgent;
@@ -21,7 +22,7 @@ pub enum Field {
     Text(&'static str)
 }
 
-pub type ProcessorExtFn = fn(&Event) -> String;
+pub type ProcessorExtFn = fn(&Event) -> Option<String>;
 
 use Field::{Actor, Receptor, Origin, Destination, HighlightOrigin, HighlightDestination, Text};
 
@@ -31,52 +32,26 @@ pub struct Processor {
 }
 
 impl Processor {
-    pub fn process(&self, event: &Event) -> String {
+    pub fn process(&self, event: &Event) -> Option<String> {
         let mut result: Vec<String> = Vec::new();
 
         for field in &self.fields {
             match field {
-                Actor => {
-                    if let Some(actor) = &event.actor {
-                        result.push(display_nation(&actor, true));
-                    }
-                },
-                Receptor => {
-                    if let Some(receptor) = &event.receptor {
-                        result.push(display_nation(&receptor, true));
-                    }
-                },
-                Origin => {
-                    if let Some(origin) = &event.origin {
-                        result.push(display_region(&origin, false));
-                    }
-                },
-                Destination => {
-                    if let Some(destination) = &event.destination {
-                        result.push(display_region(&destination, false));
-                    }
-                },
-                HighlightOrigin => {
-                    if let Some(origin) = &event.origin {
-                        result.push(display_region(&origin, true));
-                    }
-                },
-                HighlightDestination => {
-                    if let Some(destination) = &event.destination {
-                        result.push(display_region(&destination, true));
-                    }
-                },
-                Text(text) => {
-                    result.push((*text).to_string());
-                }
+                Actor => result.push(display_region(event.actor.as_ref()?, false)),
+                Receptor => result.push(display_region(event.receptor.as_ref()?, false)),
+                Origin => result.push(display_region(event.origin.as_ref()?, false)),
+                Destination => result.push(display_region(event.destination.as_ref()?, false)),
+                HighlightOrigin => result.push(display_region(event.origin.as_ref()?, true)),
+                HighlightDestination => result.push(display_region(event.destination.as_ref()?, true)),
+                Text(text) => result.push((*text).to_string()),
             }
         }
 
         if let Some(func) = self.custom {
-            result.push(func(&event));
+            result.push(func(&event)?);
         }
 
-        result.join("")
+        Some(result.join(""))
     }
 
     pub fn init(fields: Vec<Field>, custom: ProcessorExtFn) -> Self {
@@ -92,122 +67,122 @@ impl From<Vec<Field>> for Processor {
 
 pub type OutputMap = HashMap<&'static str, Processor>;
 
-fn process_found(event: &Event) -> String {
-    let actor = event.actor.as_ref().unwrap();
-    let origin = event.origin.as_ref().unwrap();
+fn process_found(event: &Event) -> Option<String> {
+    let actor = event.actor.as_ref()?;
+    let origin = event.origin.as_ref()?;
 
     if event.category == "nfound" {
-        format!("{} was founded in {}", 
+        Some(format!("{} was founded in {}", 
             display_nation(actor, true),
             display_region(origin, true)
-        )
+        ))
     } else {
-        format!("{} was refounded in {}", 
+        Some(format!("{} was refounded in {}", 
             display_nation(actor, true),
             display_region(origin, true)
-        )
+        ))
     }
 }
 
-fn process_delegate(event: &Event) -> String {
-    let receptor = event.receptor.as_ref().unwrap();
-    let origin = event.origin.as_ref().unwrap();
+fn process_delegate(event: &Event) -> Option<String> {
+    let receptor = event.receptor.as_ref()?;
+    let origin = event.origin.as_ref()?;
 
     if event.category == "ndel" {
-        format!("{} became WA delegate of {}", 
+        Some(format!("{} became WA delegate of {}", 
             display_nation(receptor, true),
             display_region(origin, true)
-        )
+        ))
     } else if event.category == "rdel" {
-        let old_delegate = event.data.get(0).unwrap();
-        format!("{} seized the delegacy of {} from {}", 
+        let old_delegate = event.data.get(0)?;
+        Some(format!("{} seized the delegacy of {} from {}", 
             display_nation(receptor, true),
             display_region(origin, true),
             display_nation(old_delegate, false)
-        )
+        ))
     } else {
-        format!("{} lost WA delegate status in {}", 
+        Some(format!("{} lost WA delegate status in {}", 
             display_nation(receptor, true),
             display_region(origin, true)
-        )
+        ))
     }
 }
 
-fn process_wa_floor(event: &Event) -> String {
-    let author = event.receptor.as_ref().unwrap();
-    let chamber = &event.data[0];
-    let proposal = &event.data[1];
+fn process_wa_floor(event: &Event) -> Option<String> {
+    let author = event.receptor.as_ref()?;
+    let chamber = event.data.get(0)?;
+    let proposal = event.data.get(1)?;
 
     if let Some((_, coauthors)) = event.data.split_at_checked(2) && !coauthors.is_empty() {
-        format!("The {} resolution {} (by {}, coauthor(s): {}) is now at vote",
+        Some(format!("The {} resolution {} (by {}, coauthor(s): {}) is now at vote",
             display_chamber(chamber, true),
             display_proposal_name(proposal), 
             display_nation(author, true),
             coauthors.iter().map(|nation| display_nation(nation, false)).join(", ")
-        )
+        ))
     } else {
-        format!("The {} resolution {} (by {}) is now at vote", 
+        Some(format!("The {} resolution {} (by {}) is now at vote", 
             display_chamber(chamber, true),
             display_proposal_name(proposal), 
             display_nation(author, true),
-        )
+        ))
     }
 }
 
-fn process_wa_submit(event: &Event) -> String {
+fn process_wa_submit(event: &Event) -> Option<String> {
     let author = event.actor.as_ref().unwrap();
-    let chamber = &event.data[0];
-    let board = &event.data[1];
-    let proposal = &event.data[2];
+    let chamber = event.data.get(0)?;
+    let board = event.data.get(1)?;
+    let proposal = event.data.get(2)?;
 
-    format!("{} submitted a proposal ({}) to the {} {} Board", 
+    Some(format!("{} submitted a proposal ({}) to the {} {} Board", 
         display_nation(author, true),
         display_proposal_name(proposal), 
         chamber, board
-    )
+    ))
 }
 
-fn process_wa_pass(event: &Event) -> String {
-    let chamber = &event.data[0];
-    let resolution = &event.data[1];
-    let proposal = &event.data[2];
-    let votes_for = &event.data[3];
-    let votes_against = &event.data[4];
+fn process_wa_pass(event: &Event) -> Option<String> {
+    let chamber = event.data.get(0)?;
+    let resolution = event.data.get(1)?;
+    let proposal = event.data.get(2)?;
+    let votes_for = event.data.get(3)?;
+    let votes_against = event.data.get(4)?;
 
-    format!("The {} resolution {} was passed {} votes FOR to {} votes AGAINST", 
+    Some(format!("The {} resolution {} was passed {} votes FOR to {} votes AGAINST", 
         display_chamber(chamber, false),
         display_proposal_url(proposal, chamber, resolution, true),
         votes_for,
         votes_against
-    )
+    ))
 }
 
-fn process_wa_fail(event: &Event) -> String {
-    let chamber = &event.data[0];
-    let proposal = &event.data[1];
-    let votes_against = &event.data[2];
-    let votes_for = &event.data[3];
+fn process_wa_fail(event: &Event) -> Option<String> {
+    let chamber = event.data.get(0)?;
+    let proposal = event.data.get(1)?;
+    let votes_against = event.data.get(2)?;
+    let votes_for = event.data.get(3)?;
 
-    format!("The {} resolution {} was defeated {} votes AGAINST to {} votes FOR", 
+    Some(format!("The {} resolution {} was defeated {} votes AGAINST to {} votes FOR", 
         display_chamber(chamber, false),
         display_proposal_name(proposal),
         votes_against,
         votes_for
-    )
+    ))
 }
 
-fn process_wa_discard(event: &Event) -> String {
-    let chamber = &event.data[0];
-    let proposal = &event.data[1];
-    let votes_for = &event.data[2];
-    let votes_against = &event.data[3];
+fn process_wa_discard(event: &Event) -> Option<String> {
+    let chamber = event.data.get(0)?;
+    let proposal = event.data.get(1)?;
+    let votes_for = event.data.get(2)?;
+    let votes_against = event.data.get(3)?;
 
-    format!("The {} resolution {} was discarded after getting {} votes FOR and {} votes AGAINST", 
+    Some(format!("The {} resolution {} was discarded after getting {} votes FOR and {} votes AGAINST", 
         display_chamber(chamber, false),
         display_proposal_name(proposal),
         votes_for,
         votes_against
-    )
+    ))
 }
 
 fn create_output_map() -> OutputMap {
@@ -276,7 +251,10 @@ pub async fn output_event(
     } 
 
     if let Some(processor) = OUTPUT_MAP.get(category) {
-        let description = processor.process(event);
+        let Some(description) = processor.process(event) else {
+            warn!("Event {} is missing fields: {:?}", event.category, event);
+            return Ok(());
+        };
 
         let mut buttons: Vec<CreateButton> = Vec::new();
         
