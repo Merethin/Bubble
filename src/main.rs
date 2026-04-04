@@ -5,13 +5,14 @@ mod webhook;
 mod utils;
 mod rmb;
 mod nscode;
+mod render;
 mod worker;
 mod cache;
 mod events;
 
 use std::{sync::Arc, process::exit, error::Error};
 
-use log::error;
+use log::{error, warn};
 use serenity::all::Http;
 use tokio::sync::{mpsc::Sender};
 
@@ -23,7 +24,7 @@ use caramel::types::akari::Event;
 use crate::cache::NSCache;
 use crate::config::Config;
 use crate::worker::NSQuery;
-use crate::events::{check_and_update_wa, match_origin_category, match_world_category};
+use crate::events::{check_and_update_tag_cloud, classify_event};
 
 const PROGRAM: &str = "bubble";
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -95,112 +96,34 @@ async fn process_event(
     }
 
     check_and_update_tag_cloud(&event, cache.clone()).await;
-    let is_wa = check_and_update_wa(&event, cache.clone()).await;
+    let Some(event_data) = classify_event(&event, cache.clone()).await else {
+        warn!("Malformed event {}: {:?}", event.category, event);
+        return;
+    };
 
     if cache.should_run_tag_query().await {
         cache.run_tag_query(ns_tx, config).await;
     }
 
-    if let Some(region) = &event.origin
-    && let Some(category) = match_origin_category(&event, is_wa) {
-        if let Some(output_config) = config.get_region_event(region, category) {
-            output::output_event(http, category, &output_config, &event, &user_agent).await.unwrap_or_else(|err| {
+    for data in event_data {
+        if let Some(region) = &data.region {
+            if let Some(output_config) = config.get_region_event(region, data.name) {
+                output::output_event(http, data.name, &output_config, &event, &user_agent).await.unwrap_or_else(|err| {
+                    error!("Failed to send event {event:?} to webhook: {err}");
+                });
+            }
+
+            for output_config in config.get_tag_events(cache.clone(), region, data.name).await {
+                output::output_event(http, data.name, &output_config, &event, &user_agent).await.unwrap_or_else(|err| {
+                    error!("Failed to send event {event:?} to webhook: {err}");
+                });
+            }
+        }
+
+        if let Some(output_config) = config.get_world_event(data.name) {
+            output::output_event(http, data.name, &output_config, &event, &user_agent).await.unwrap_or_else(|err| {
                 error!("Failed to send event {event:?} to webhook: {err}");
             });
         }
-
-        for output_config in config.get_tag_events(cache.clone(), region, category).await {
-            output::output_event(http, category, &output_config, &event, &user_agent).await.unwrap_or_else(|err| {
-                error!("Failed to send event {event:?} to webhook: {err}");
-            });
-        }
-    }
-
-    if let Some(region) = &event.destination && event.category.as_str() == "move" {
-        let category = if is_wa { "wajoin" } else { "join" };
-
-        if let Some(output_config) = config.get_region_event(region, category) {
-            output::output_event(http, category, &output_config, &event, &user_agent).await.unwrap_or_else(|err| {
-                error!("Failed to send event {event:?} to webhook: {err}");
-            });
-        }
-
-        for output_config in config.get_tag_events(cache.clone(), region, category).await {
-            output::output_event(http, category, &output_config, &event, &user_agent).await.unwrap_or_else(|err| {
-                error!("Failed to send event {event:?} to webhook: {err}");
-            });
-        }
-    }
-
-    if let Some(category) = match_world_category(&event, is_wa)
-    && let Some(output_config) = config.get_world_event(category) {
-        output::output_event(http, category, &output_config, &event, &user_agent).await.unwrap_or_else(|err| {
-            error!("Failed to send event {event:?} to webhook: {err}");
-        });
-    }
-}
-
-async fn check_and_update_tag_cloud(event: &Event, cache: Arc<NSCache>) {
-    match event.category.as_str() {
-        "rgcte" | "govabd" => {
-            if let Some(region) = &event.origin {
-                if let Some(tag_entry) = cache.tag_cloud.write().await.get_mut("governorless") {
-                    tag_entry.insert(region.clone());
-                }
-            }
-        },
-        "fngovrem" => {
-            if let Some(region) = &event.origin {
-                let mut tag_cloud = cache.tag_cloud.write().await;
-                if let Some(tag_entry) = tag_cloud.get_mut("governorless") {
-                    tag_entry.insert(region.clone());
-                }
-                if let Some(tag_entry) = tag_cloud.get_mut("frontier") {
-                    tag_entry.insert(region.clone());
-                }
-            }
-        }
-        "rnewgov" => {
-            if let Some(region) = &event.origin {
-                if let Some(tag_entry) = cache.tag_cloud.write().await.get_mut("governorless") {
-                    tag_entry.remove(region);
-                }
-            }
-        }
-        "stgovadd" => {
-            if let Some(region) = &event.origin {
-                let mut tag_cloud = cache.tag_cloud.write().await;
-                if let Some(tag_entry) = tag_cloud.get_mut("governorless") {
-                    tag_entry.remove(region);
-                }
-                if let Some(tag_entry) = tag_cloud.get_mut("frontier") {
-                    tag_entry.remove(region);
-                }
-            }
-        },
-        "addtag" => {
-            if let Some(region) = &event.origin
-            && let Some(tag) = event.data.get(0).map(
-                |v| v.to_lowercase().replace(' ', "_")
-            ) {
-                if let Some(tag_entry) = cache.tag_cloud.write().await.get_mut(&tag) {
-                    tag_entry.insert(region.clone());
-                }
-            }
-        },
-        "rmtag" => {
-            if let Some(region) = &event.origin
-            && let Some(tag) = event.data.get(0).map(
-                |v| v.to_lowercase().replace(' ', "_")
-            ) {
-                if let Some(tag_entry) = cache.tag_cloud.write().await.get_mut(&tag) {
-                    tag_entry.remove(region);
-                }
-            }
-        },
-        "rfound" => {
-            cache.tick_tag_query().await;
-        }
-        _ => {}
     }
 }
