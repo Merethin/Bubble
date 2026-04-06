@@ -37,8 +37,8 @@ impl Processor {
 
         for field in &self.fields {
             match field {
-                Actor => result.push(display_region(event.actor.as_ref()?, false)),
-                Receptor => result.push(display_region(event.receptor.as_ref()?, false)),
+                Actor => result.push(display_nation(event.actor.as_ref()?, true)),
+                Receptor => result.push(display_nation(event.receptor.as_ref()?, true)),
                 Origin => result.push(display_region(event.origin.as_ref()?, false)),
                 Destination => result.push(display_region(event.destination.as_ref()?, false)),
                 HighlightOrigin => result.push(display_region(event.origin.as_ref()?, true)),
