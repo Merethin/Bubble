@@ -108,6 +108,21 @@ fn process_delegate(event: &Event) -> Option<String> {
     }
 }
 
+fn process_feature(event: &Event) -> Option<String> {
+    let origin = event.origin.as_ref()?;
+
+    if event.category == "rmapfeat" {
+        let map_id = event.data.get(0)?;
+        Some(format!("{} became the **[Featured Map](https://www.nationstates.net/page=map/mid={})** of the day", 
+            display_region(origin, true), map_id
+        ))
+    } else {
+        Some(format!("{} became the Featured Region of the day", 
+            display_region(origin, true)
+        ))
+    }
+}
+
 fn process_wa_floor(event: &Event) -> Option<String> {
     let author = event.receptor.as_ref()?;
     let chamber = event.data.get(0)?;
@@ -221,9 +236,7 @@ fn create_output_map() -> OutputMap {
     line_map.insert("update", vec![
         HighlightOrigin, Text(" updated")
     ].into());
-    line_map.insert("feature", vec![
-        HighlightOrigin, Text(" became the Featured Region of the day")
-    ].into());
+    line_map.insert("feature", Processor::init(vec![], process_feature));
     line_map.insert("found", Processor::init(vec![], process_found));
     line_map.insert("delegate", Processor::init(vec![], process_delegate));
     line_map.insert("wa-floor", Processor::init(vec![], process_wa_floor));
