@@ -24,7 +24,7 @@ use caramel::types::akari::Event;
 use crate::cache::NSCache;
 use crate::config::Config;
 use crate::worker::NSQuery;
-use crate::events::{check_and_update_tag_cloud, classify_event};
+use crate::events::classify_event;
 
 const PROGRAM: &str = "bubble";
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -70,8 +70,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
         error!("Failed to trigger WA nation update: {err}");
     });
 
-    cache.run_tag_query(&mut ns_tx, &config).await;
-
     let http = Http::new("");
 
     while let Some(event) = akari::consume(&mut consumer).await {
@@ -95,25 +93,14 @@ async fn process_event(
         return;
     }
 
-    check_and_update_tag_cloud(&event, cache.clone()).await;
     let Some(event_data) = classify_event(&event, cache.clone()).await else {
         warn!("Malformed event {}: {:?}", event.category, event);
         return;
     };
 
-    if cache.should_run_tag_query().await {
-        cache.run_tag_query(ns_tx, config).await;
-    }
-
     for data in event_data {
         if let Some(region) = &data.region {
             if let Some(output_config) = config.get_region_event(region, data.name) {
-                output::output_event(http, data.name, &output_config, &event, &user_agent).await.unwrap_or_else(|err| {
-                    error!("Failed to send event {event:?} to webhook: {err}");
-                });
-            }
-
-            for output_config in config.get_tag_events(cache.clone(), region, data.name).await {
                 output::output_event(http, data.name, &output_config, &event, &user_agent).await.unwrap_or_else(|err| {
                     error!("Failed to send event {event:?} to webhook: {err}");
                 });

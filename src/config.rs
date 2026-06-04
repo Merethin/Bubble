@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
 use std::fs;
 use std::process::exit;
 use log::{error, warn};
@@ -6,8 +6,6 @@ use toml::Table;
 use hex_color::HexColor;
 
 use caramel::webhook::{Webhook, parse_webhook_from_url};
-
-use crate::cache::NSCache;
 
 #[derive(Debug, Clone)]
 pub struct OutputConfig {
@@ -42,7 +40,6 @@ pub struct Config {
     pub webhooks: HashMap<String, Webhook>,
     pub roles: HashMap<String, u64>,
     pub regions: HashMap<String, RegionConfig>,
-    pub tags: HashMap<String, RegionConfig>,
     pub world: Option<RegionConfig>,
 }
 
@@ -88,16 +85,6 @@ impl Config {
 
     pub fn get_world_event(&self, event: &str) -> Option<OutputConfig> {
         return self.get_event_impl(self.world.as_ref()?, event);
-    }
-
-    pub async fn get_tag_events(&self, cache: Arc<NSCache>, region: &str, event: &str) -> Vec<OutputConfig> {
-        cache.tag_cloud.read().await.iter().filter_map(|(tag, regions)| {
-            if regions.contains(region) { Some(tag.clone()) } else { None }
-        }).filter_map(|tag| {
-            let config = self.tags.get(&tag).unwrap();
-            if config.exclude.contains(&region.to_string()) { return None; }
-            self.get_event_impl(config, event)
-        }).collect()
     }
 }
 
@@ -237,15 +224,6 @@ pub fn parse_config(path: &str) -> Result<Config, Box<dyn std::error::Error>> {
         }
     };
 
-    let tags = match table.get("tag") {
-        Some(toml::Value::Table(t)) => {
-            parse_regions(t)
-        },
-        _ => {
-            HashMap::new()
-        }
-    };
-
     let world = match table.get("world") {
         Some(toml::Value::Table(t)) => {
             Some(parse_region(t))
@@ -255,5 +233,5 @@ pub fn parse_config(path: &str) -> Result<Config, Box<dyn std::error::Error>> {
         }
     };
 
-    Ok(Config { input, webhooks, roles, regions, tags, world })
+    Ok(Config { input, webhooks, roles, regions, world })
 }
