@@ -31,7 +31,7 @@ pub fn display_proposal_name(name: &str) -> String {
 
 pub fn display_proposal_url(name: &str, chamber: &str, id: &str, bold: bool) -> String {
     let council = match chamber {
-        "General Assembly" => "1",
+        "General Assembly" => "3",
         "Security Council" => "2",
         _ => "0"
     };
