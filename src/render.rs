@@ -1,4 +1,5 @@
 use caramel::ns::format::prettify_name;
+use url::Url;
 
 use crate::utils::{display_nation, display_region};
 use crate::nscode::Tag;
@@ -58,6 +59,8 @@ pub fn render_as_bytes(tags: Vec<Tag<'_>>, mut limit: usize) -> Vec<u8> {
     let mut chars: Vec<u8> = Vec::new();
 
     if limit == 0 { return chars; }
+
+    let base = Url::parse("https://www.nationstates.net").unwrap();
 
     for tag in tags {
         match tag {
@@ -121,10 +124,11 @@ pub fn render_as_bytes(tags: Vec<Tag<'_>>, mut limit: usize) -> Vec<u8> {
             },
             Tag::Url((url, inner_tags)) => {
                 let bytes = render_as_bytes(inner_tags, limit);
+                let link = Url::parse(url).or_else(|_| base.join(url)).map_or(url.to_string(), |v| v.to_string());
                 wrap_lines(
                     &mut chars, &bytes, 
                     "[".as_bytes(), 
-                    format!("]({url})").as_bytes(),
+                    format!("]({link})").as_bytes(),
                     &mut limit
                 );
             },
