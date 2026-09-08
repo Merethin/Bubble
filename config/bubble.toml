@@ -1,6 +1,3 @@
-[input]
-exchange_name = "akari_events"
-
 [webhooks]
 main = "https://discord.com/api/webhooks/<id>/<token>"
 rmb = "https://discord.com/api/webhooks/<id>/<token>"
@@ -10,21 +7,41 @@ rmb-team = "<role_id>"
 endo-team = "<role_id>"
 welcome-team = "<role_id>"
 
-[region.testregionia]
-default-hook = "main"
-default-color = "#44BB12"
-rmb = { color = "#AA00BB", hook = "rmb", mentions = ["rmb-team"] }
-join = { mentions = ["welcome-team"] }
-wajoin = { mentions = ["welcome-team", "endo-team"] }
-admit = { mentions = ["endo-team"] }
-update = {}
-feature = {}
-delegate = {}
-leave = {}
-waleave = {}
-found = {}
-cte = {}
-wacte = {}
-apply = {}
-resign = {}
-wakick = {}
+[rule.rmb]
+if_event = ["rmb"]
+if_region = ["testregionia"]
+webhook = "rmb"
+color = "#AA00BB"
+role_mentions = ["rmb-team"]
+links = ["post", "quote"]
+
+[rule.join]
+if_event = ["join"]
+if_region = ["testregionia"]
+if_wa = false
+webhook = "main"
+color = "#44BB12"
+role_mentions = ["welcome-team"]
+
+[rule.wa_join]
+if_event = ["join"]
+if_region = ["testregionia"]
+if_wa = true
+webhook = "main"
+color = "#44BB12"
+role_mentions = ["welcome-team", "endo-team"]
+links = ["endorse"]
+
+[rule.admit]
+if_event = ["admit"]
+if_region = ["testregionia"]
+webhook = "main"
+color = "#44BB12"
+role_mentions = ["endo-team"]
+links = ["endorse"]
+
+[rule.other_events]
+if_event = ["update", "feature", "delegate", "leave", "found", "cte", "apply", "resign", "wakick"]
+if_region = ["testregionia"]
+webhook = "main"
+color = "#44BB12"

@@ -1,3 +1,7 @@
+mod rmb;
+mod links;
+mod webhook;
+
 use std::{collections::HashMap, sync::LazyLock};
 
 use itertools::Itertools;
@@ -7,10 +11,14 @@ use serenity::all::{CreateButton, Http};
 use caramel::ns::UserAgent;
 use caramel::types::akari::Event;
 
-use crate::config::OutputConfig;
-use crate::rmb::output_rmb_post;
-use crate::webhook::{build_event_embed, send_embed_to_webhook};
-use crate::utils::{chamber_link, display_chamber, display_nation, display_proposal_name, display_proposal_url, display_region};
+use rmb::output_rmb_post;
+
+use crate::config::ParsedRule;
+use crate::events::EventData;
+use crate::utils::{display_chamber, display_nation, display_proposal_name, display_proposal_url, display_region};
+
+use webhook::{build_event_embed, send_embed_to_webhook};
+pub use links::{LinkGenerator, LINK_MAP};
 
 pub enum Field {
     Actor,
@@ -252,16 +260,27 @@ static OUTPUT_MAP: LazyLock<OutputMap> = LazyLock::new(|| create_output_map());
 
 pub async fn output_event(
     http: &Http,
-    category: &str,
-    output_config: &OutputConfig,
+    mut category: &str,
+    rule: &ParsedRule,
     event: &Event,
+    data: &EventData,
     user_agent: &UserAgent
 ) -> Result<(), Box<dyn std::error::Error>> {  
     if category == "rmb" {
-        output_rmb_post(http, output_config, event, user_agent).await?;
+        output_rmb_post(http, rule, event, data, user_agent).await?;
 
         return Ok(());
     } 
+
+    // Hackish, fixme: do proper conditional highlighting
+    if let Some((_, is_wa)) = &data.nation && *is_wa {
+        category = match category {
+            "join" => "wajoin",
+            "leave" => "waleave",
+            "cte" => "wacte",
+            _ => category,
+        };
+    }
 
     if let Some(processor) = OUTPUT_MAP.get(category) {
         let Some(description) = processor.process(event) else {
@@ -270,35 +289,21 @@ pub async fn output_event(
         };
 
         let mut buttons: Vec<CreateButton> = Vec::new();
-        
-        if category == "wajoin" || category == "admit" {
-            buttons.push(
-                CreateButton::new_link(
-                    format!("https://www.nationstates.net/nation={}?generated_by={}#endorse", 
-                        event.actor.as_ref().unwrap(), user_agent.web()
-                    )
-                ).label("Endorse Nation")
-            );
-        }
-
-        if category == "wa-floor" {
-            buttons.push(
-                CreateButton::new_link(
-                    format!("{}?generated_by={}", 
-                        chamber_link(&event.data[0]), user_agent.web()
-                    )
-                ).label("Open Voting Page")
-            );
+        for generator in &rule.links {
+            if let Some(button) = generator(event, data, user_agent) {
+                buttons.push(button);
+            }
         }
 
         let embed = build_event_embed(
-            output_config.color, &description, event.time, None
+            rule.color, &description, event.time, None
         )?;
 
         send_embed_to_webhook(
             http, 
-            &output_config.hook,
-            output_config.mentions.clone(),
+            &rule.webhook,
+            rule.role_mentions.clone(),
+            rule.user_mentions.clone(),
             embed,
             buttons
         ).await?;

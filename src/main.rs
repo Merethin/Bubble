@@ -1,9 +1,7 @@
 mod config;
 mod api;
 mod output;
-mod webhook;
 mod utils;
-mod rmb;
 mod nscode;
 mod render;
 mod worker;
@@ -22,7 +20,7 @@ use caramel::akari;
 use caramel::types::akari::Event;
 
 use crate::cache::NSCache;
-use crate::config::Config;
+use crate::config::ParsedRule;
 use crate::worker::NSQuery;
 use crate::events::classify_event;
 
@@ -39,7 +37,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let user_agent = UserAgent::read_from_env(PROGRAM, VERSION, AUTHOR);
 
-    let config = config::parse_config(CONFIG_PATH).unwrap_or_else(|err| {
+    let rules = config::parse_config(CONFIG_PATH).unwrap_or_else(|err| {
         error!("Failed to read config file: {err}");
         exit(1);
     });
@@ -55,7 +53,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     ).await?;
 
     let channel = conn.create_channel().await?;
-    let mut consumer = akari::create_consumer(&channel, &config.input.exchange_name, None).await?;
+    let mut consumer = akari::create_consumer(&channel, "akari_events", None).await?;
 
     let client = Arc::new(Client::new(user_agent.clone()).unwrap_or_else(|err| {
         error!("Failed to initialize API client: {err}");
@@ -73,14 +71,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let http = Http::new("");
 
     while let Some(event) = akari::consume(&mut consumer).await {
-        process_event(&http, event, &config, cache.clone(), &user_agent, &mut ns_tx).await;
+        process_event(&http, event, &rules, cache.clone(), &user_agent, &mut ns_tx).await;
     }
 
     Ok(())
 }
 
 async fn process_event(
-    http: &Http, event: Event, config: &Config, 
+    http: &Http, event: Event, rules: &Vec<ParsedRule>, 
     cache: Arc<NSCache>,
     user_agent: &UserAgent, 
     ns_tx: &mut Sender<NSQuery>
@@ -99,16 +97,10 @@ async fn process_event(
     };
 
     for data in event_data {
-        if let Some(region) = &data.region {
-            if let Some(output_config) = config.get_region_event(region, data.name) {
-                output::output_event(http, data.name, &output_config, &event, &user_agent).await.unwrap_or_else(|err| {
-                    error!("Failed to send event {event:?} to webhook: {err}");
-                });
-            }
-        }
+        for rule in rules {
+            if !rule.matches(&data) { continue; }
 
-        if let Some(output_config) = config.get_world_event(data.name) {
-            output::output_event(http, data.name, &output_config, &event, &user_agent).await.unwrap_or_else(|err| {
+            output::output_event(http, data.name, &rule, &event, &data, &user_agent).await.unwrap_or_else(|err| {
                 error!("Failed to send event {event:?} to webhook: {err}");
             });
         }
