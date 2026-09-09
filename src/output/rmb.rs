@@ -50,9 +50,16 @@ pub fn format_content(
     content: &String,
     limit: Option<usize>,
 ) -> String {
+    let clamped_limit = limit.unwrap_or(MAX_DISCORD_EMBED_CONTENT).min(MAX_DISCORD_EMBED_CONTENT);
+
     if let Some(tags) = nscode::parse(content) {
-        return render_tags(tags, limit.unwrap_or(MAX_DISCORD_EMBED_CONTENT).min(MAX_DISCORD_EMBED_CONTENT));
+        let output = render_tags(tags, clamped_limit);
+        if output.len() == clamped_limit && (output.len() + 3) <= MAX_DISCORD_EMBED_CONTENT {
+            return output + "...";
+        } else {
+            return output;
+        }
     }
 
-    "**Error: unable to parse RMB post, view the post by clicking the 'View Post' button**".into()
+    "**Error: unable to parse RMB post, view the post by clicking the 'View Full Post' button**".into()
 }

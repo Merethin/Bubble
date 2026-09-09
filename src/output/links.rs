@@ -54,7 +54,7 @@ fn generate_post_link(event: &Event, data: &EventData, user_agent: &UserAgent) -
                 "https://www.nationstates.net/page=display_region_rmb/region={}?generated_by={}&postid={}#p{}", 
                 region, user_agent.web(), postid, postid
             )
-        ).label("View Post"))
+        ).label("View Full Post"))
     } else {
         None
     }
