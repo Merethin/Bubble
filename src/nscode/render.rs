@@ -1,13 +1,13 @@
 use bbx::BBParser;
 use caramel::ns::format::prettify_name;
 use url::Url;
-use regex::Regex;
+use regex::{Regex, RegexBuilder};
 
 use crate::utils::{display_nation, display_region};
 use crate::nscode::Tag;
 
 lazy_static::lazy_static! {
-    static ref START_REGEX: Regex = Regex::new(r#"^(\s*)([#>-])"#).unwrap();
+    static ref START_REGEX: Regex = RegexBuilder::new(r#"^(\s*)([#>-])"#).multi_line(true).build().unwrap();
 }
 
 const MISC_SEQUENCES: [&str; 7] = [
