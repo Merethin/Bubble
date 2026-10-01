@@ -77,7 +77,7 @@ fn generate_quote_link_inner(
     );
 
     if url.len() >= MAX_DISCORD_URL_LENGTH {
-        return generate_quote_link_inner(region, nation, postid, "- snip -", user_agent);
+        return generate_quote_link_inner(region, nation, postid, "-snip-", user_agent);
     }
 
     url
@@ -89,7 +89,7 @@ fn generate_quote_link(event: &Event, data: &EventData, user_agent: &UserAgent) 
         let region = event.origin.as_ref().unwrap();
         let postid = &event.data[0];
         let message = &event.data[1];
-        let quote_content = nscode::remove_subquotes(message);
+        let quote_content = nscode::render::remove_subquotes(message);
 
         Some(CreateButton::new_link(
             generate_quote_link_inner(region, nation, postid, &quote_content, user_agent)

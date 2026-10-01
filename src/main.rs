@@ -3,7 +3,6 @@ mod api;
 mod output;
 mod utils;
 mod nscode;
-mod render;
 mod worker;
 mod cache;
 mod events;

@@ -405,6 +405,7 @@ dependencies = [
  "hex_color",
  "itertools 0.14.0",
  "lapin",
+ "lazy_static",
  "log",
  "pest",
  "pest_derive",

@@ -1,8 +1,30 @@
+use bbx::BBParser;
 use caramel::ns::format::prettify_name;
 use url::Url;
+use regex::Regex;
 
 use crate::utils::{display_nation, display_region};
 use crate::nscode::Tag;
+
+lazy_static::lazy_static! {
+    static ref START_REGEX: Regex = Regex::new(r#"^(\s*)([#>-])"#).unwrap();
+}
+
+const MISC_SEQUENCES: [&str; 7] = [
+    "*", "_", "~~", "[", "(", "`", "||"
+];
+
+fn sanitize_text(text: &str) -> String {
+    let mut result = text.replace("\\", "\\\\");
+
+    result = START_REGEX.replace_all(&result, "${1}\\${2}").to_string();
+
+    for sequence in MISC_SEQUENCES {
+        result = result.replace(sequence, &format!("\\{sequence}"));
+    }
+
+    result
+}
 
 fn add_until_limit(vec: &mut Vec<u8>, bytes: &[u8], limit: &mut usize) {
     if bytes.len() > *limit {
@@ -65,7 +87,8 @@ pub fn render_as_bytes(tags: Vec<Tag<'_>>, mut limit: usize) -> Vec<u8> {
     for tag in tags {
         match tag {
             Tag::Text(text) => {
-                add_until_limit(&mut chars, text.as_bytes(), &mut limit);
+                let sanitized = sanitize_text(text);
+                add_until_limit(&mut chars, sanitized.as_bytes(), &mut limit);
             }
             Tag::Bold(inner_tags) => {
                 let bytes = render_as_bytes(inner_tags, limit.saturating_sub(4));
@@ -164,4 +187,23 @@ pub fn render_tags(tags: Vec<Tag<'_>>, limit: usize) -> String {
     let chars = render_as_bytes(tags, limit);
 
     String::from_utf8_lossy(&chars).to_string()
+}
+
+pub fn remove_subquotes(text: &str) -> String {
+    let mut parser = BBParser::new(text);
+    let mut result: Vec<String> = Vec::new();
+
+    let mut quote_level: u64 = 0;
+
+    while let Some(token) = parser.next() {
+        if token.is_open("quote") {
+            quote_level += 1;
+        } else if token.is_close("quote") {
+            quote_level = quote_level.saturating_sub(1);
+        } else if quote_level == 0 {
+            result.push(token.span.to_owned());
+        }
+    }
+
+    result.into_iter().collect::<String>().trim().to_owned()
 }

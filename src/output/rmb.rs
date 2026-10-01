@@ -3,8 +3,7 @@ use std::error::Error;
 
 use caramel::{ns::{UserAgent, format::prettify_name}, types::akari::Event};
 
-use crate::{events::EventData, render::render_tags};
-use crate::{config::ParsedRule, nscode};
+use crate::{events::EventData, nscode::{self, render::render_tags}, config::ParsedRule};
 use super::webhook::{build_event_embed, send_embed_to_webhook};
 
 pub async fn output_rmb_post(
@@ -52,7 +51,7 @@ pub fn format_content(
 ) -> String {
     let clamped_limit = limit.unwrap_or(MAX_DISCORD_EMBED_CONTENT).min(MAX_DISCORD_EMBED_CONTENT);
 
-    if let Some(tags) = nscode::parse(content) {
+    if let Some(tags) = nscode::parse::parse(content) {
         let output = render_tags(tags, clamped_limit);
         if output.len() == clamped_limit && (output.len() + 3) <= MAX_DISCORD_EMBED_CONTENT {
             return output + "...";

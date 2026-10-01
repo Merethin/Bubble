@@ -1,27 +1,9 @@
 use pest::{Parser, iterators::{Pairs, Pair}};
 use pest_derive::Parser;
-use bbx::BBParser;
-
-pub enum Tag<'a> {
-    Text(&'a str),
-    Bold(Vec<Tag<'a>>),
-    Italic(Vec<Tag<'a>>),
-    Underline(Vec<Tag<'a>>),
-    Strike(Vec<Tag<'a>>),
-    Sub(Vec<Tag<'a>>),
-    Sup(Vec<Tag<'a>>),
-    Nation(&'a str),
-    Region(&'a str),
-    Proposal((&'a str, Vec<Tag<'a>>)),
-    Resolution((&'a str, &'a str, Vec<Tag<'a>>)),
-    Url((&'a str, Vec<Tag<'a>>)),
-    Pre(Vec<Tag<'a>>),
-    Quote((&'a str, &'a str, Vec<Tag<'a>>)),
-    Spoiler((Option<&'a str>, Vec<Tag<'a>>)),
-}
+use crate::nscode::Tag;
 
 #[derive(Parser)]
-#[grammar = "nscode.pest"]
+#[grammar = "nscode/grammar.pest"]
 struct NsCodeParser;
 
 fn walk_pair(pair: Pair<'_, Rule>) -> Vec<Tag<'_>> {
@@ -129,23 +111,4 @@ pub fn parse(text: &str) -> Option<Vec<Tag<'_>>> {
     } else {
         None
     }
-}
-
-pub fn remove_subquotes(text: &str) -> String {
-    let mut parser = BBParser::new(text);
-    let mut result: Vec<String> = Vec::new();
-
-    let mut quote_level: u64 = 0;
-
-    while let Some(token) = parser.next() {
-        if token.is_open("quote") {
-            quote_level += 1;
-        } else if token.is_close("quote") {
-            quote_level = quote_level.saturating_sub(1);
-        } else if quote_level == 0 {
-            result.push(token.span.to_owned());
-        }
-    }
-
-    result.into_iter().collect::<String>().trim().to_owned()
 }
