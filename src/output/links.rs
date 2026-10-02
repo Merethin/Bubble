@@ -11,6 +11,7 @@ fn create_link_map() -> HashMap<&'static str, LinkGenerator> {
     let mut link_map: HashMap<&'static str, LinkGenerator> = HashMap::new();
 
     link_map.insert("endorse", generate_endorse_link);
+    link_map.insert("telegram", generate_telegram_link);
     link_map.insert("vote", generate_vote_link);
     link_map.insert("post", generate_post_link);
     link_map.insert("quote", generate_quote_link);
@@ -27,6 +28,18 @@ fn generate_endorse_link(_: &Event, data: &EventData, user_agent: &UserAgent) ->
                 nation, user_agent.web()
             )
         ).label("Endorse Nation"))
+    } else {
+        None
+    }
+}
+
+fn generate_telegram_link(_: &Event, data: &EventData, user_agent: &UserAgent) -> Option<CreateButton> {
+    if let Some((nation, _)) = &data.nation {
+        Some(CreateButton::new_link(
+            format!("https://www.nationstates.net/page=compose_telegram?tgto={}&generated_by={}", 
+                nation, user_agent.web()
+            )
+        ).label("Send Telegram"))
     } else {
         None
     }

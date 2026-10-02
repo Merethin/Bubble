@@ -177,6 +177,7 @@ A list of users to ping when an event matches the rule. Must be names specified 
 A list of link buttons to add to the end of the message. Current valid link names are:
 
 - `endorse`: Generates a link to endorse a nation.
+- `telegram`: Generates a link to the Compose Telegram page with the recipient prefilled.
 - `vote`: Generates a link to open the vote page (only shows up on `wa-floor` events).
 - `post`: Generates a link to view a RMB post (only shows up on `rmb` events).
 - `quote`: Generates a link to quote a RMB post (only shows up on `rmb` events).
