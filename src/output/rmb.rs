@@ -49,9 +49,10 @@ pub fn format_content(
     content: &String,
     limit: Option<usize>,
 ) -> String {
+    let content = content.replace("\r\n", "\n");
     let clamped_limit = limit.unwrap_or(MAX_DISCORD_EMBED_CONTENT).min(MAX_DISCORD_EMBED_CONTENT);
 
-    if let Some(tags) = nscode::parse::parse(content) {
+    if let Some(tags) = nscode::parse::parse(&content) {
         let output = render_tags(tags, clamped_limit);
         if output.len() == clamped_limit && (output.len() + 3) <= MAX_DISCORD_EMBED_CONTENT {
             return output + "...";

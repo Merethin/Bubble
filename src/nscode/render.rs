@@ -64,15 +64,17 @@ fn wrap_if_within_limit(vec: &mut Vec<u8>, bytes: &[u8], start: &[u8], end: &[u8
 
 fn wrap_lines(vec: &mut Vec<u8>, bytes: &[u8], start: &[u8], end: &[u8], limit: &mut usize) {
     for slice in bytes.split_inclusive(|&v| v == b'\n') {
-        if slice.ends_with(&[b'\n']) {
+        let add_newline = slice.ends_with(&[b'\n']);
+        let without_newline = if add_newline { &slice[0..slice.len()-1] } else { slice };
+
+        if without_newline.len() > 0 {
             wrap_if_within_limit(
-                vec, &slice[0..slice.len()-1], start, end, limit
+                vec, without_newline, start, end, limit
             );
+        }
+
+        if add_newline {
             add_if_within_limit(vec, &[b'\n'], limit);
-        } else {
-            wrap_if_within_limit(
-                vec, slice, start, end, limit
-            );
         }
     }
 }
